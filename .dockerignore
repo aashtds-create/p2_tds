@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Virtual environments
+.venv
+venv
+env
+__pycache__
+*.pyc
+
+# IDE
+.vscode
+.idea
+.cursor
+
+# Documentation (not needed in container)
+docs/
+*.md
+!README.md
+
+# Tests (not needed in container)
+tests/
+
+# Environment files (will be set via Railway UI)
+.env
+.env.local
+.env.development
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Project files
+PROJECT_STRUCTURE.txt
+

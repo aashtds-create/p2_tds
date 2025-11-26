@@ -1,0 +1,36 @@
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# HTTP Client
+httpx==0.25.1
+requests==2.31.0
+
+# Browser Automation
+playwright==1.40.0
+
+# Data Processing
+pandas==2.1.3
+numpy==1.26.2
+
+# PDF Processing
+pdfplumber==0.10.3
+pymupdf==1.23.8
+
+# Image Processing
+Pillow==10.1.0
+
+# Audio Processing (Fallbacks)
+SpeechRecognition==3.10.0
+pydub==0.25.1
+
+# LLM Integration (for API compatibility)
+openai==1.3.5
+
+# Utilities
+python-dotenv==1.0.0
+python-multipart==0.0.6
+
+# Visualization (for chart generation)
+matplotlib==3.8.2
