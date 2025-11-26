@@ -1,276 +1,259 @@
-# 🚀 Deployment Guide: Railway.app
+# 🚀 Deployment Guide
 
-## Why Railway (Not Vercel)?
+## Quick Comparison
 
-| Feature | Vercel | Railway |
-|---------|--------|---------|
-| Timeout | 10s (free) / 30s (pro) | Unlimited |
-| Playwright | ❌ Not supported | ✅ Works |
-| Docker | ❌ Limited | ✅ Full support |
-| Background tasks | ❌ Stateless | ✅ Persistent |
-| Free tier | Limited | $5/month credit |
+| Platform | Playwright | Timeout | Free Tier | Setup |
+|----------|------------|---------|-----------|-------|
+| **Railway** ⭐ | ✅ Works | ∞ | $5 credit | Easy |
+| **Render** | ✅ Works | ∞ | 750 hrs/mo | Easy |
+| **Fly.io** | ✅ Works | ∞ | $5 credit | Docker |
+| **Vercel** | ❌ No | 10s/60s | Limited | Complex |
+
+**Recommendation: Use Railway** - Best for this project!
 
 ---
 
-## 📋 **Quick Deployment (5 minutes)**
+## 🚂 Deploy on Railway (Recommended)
 
 ### Step 1: Create Railway Account
 
 1. Go to [railway.app](https://railway.app)
-2. Sign up with GitHub (recommended)
-3. Verify your account
+2. Sign up with GitHub
+3. You get $5 free credit (enough for testing)
 
-### Step 2: Create New Project
+### Step 2: Deploy from GitHub
 
-1. Click **"New Project"**
-2. Select **"Deploy from GitHub repo"**
-3. Connect your GitHub account (if not already)
-4. Select your repository
+**Option A: From GitHub Repo**
+
+1. Push your code to GitHub
+2. In Railway Dashboard: **New Project → Deploy from GitHub repo**
+3. Select your repository
+4. Railway auto-detects Dockerfile
+
+**Option B: From CLI**
+
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Login
+railway login
+
+# Initialize and deploy
+railway init
+railway up
+```
 
 ### Step 3: Configure Environment Variables
 
-In Railway dashboard:
-1. Click on your service
-2. Go to **"Variables"** tab
-3. Add these variables:
+In Railway Dashboard → Your Project → Variables:
 
 ```
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_key_here
 SECRET=your_secret_here
-EMAIL=your_email@example.com
+EMAIL=your_email@ds.study.iitm.ac.in
 ```
 
-### Step 4: Deploy!
+### Step 4: Get Your URL
 
-Railway auto-deploys on push. Just push your code:
+Railway gives you a URL like:
+```
+https://your-project-name.up.railway.app
+```
+
+### Step 5: Test It!
 
 ```bash
-git add .
-git commit -m "Add Railway deployment"
-git push origin main
+curl -X POST https://your-project.up.railway.app/quiz \
+  -H "Content-Type: application/json" \
+  -d '{"email": "your_email", "secret": "your_secret", "url": "https://tds-llm-analysis.s-anand.net/demo"}'
 ```
-
-### Step 5: Get Your URL
-
-1. Go to Railway dashboard
-2. Click **"Settings"**
-3. Under **"Domains"**, click **"Generate Domain"**
-4. Your URL: `https://your-app.up.railway.app`
 
 ---
 
-## 🧪 **Testing Your Deployment**
+## 🎨 Deploy on Render (Alternative)
 
-### Test Health Endpoint
+### Step 1: Create Render Account
 
+1. Go to [render.com](https://render.com)
+2. Sign up with GitHub
+
+### Step 2: Create Web Service
+
+1. **New → Web Service**
+2. Connect your GitHub repo
+3. Configure:
+   - **Name**: quiz-solver
+   - **Runtime**: Docker
+   - **Plan**: Free
+
+### Step 3: Add Environment Variables
+
+In Render Dashboard → Environment:
+
+```
+GEMINI_API_KEY=your_key
+SECRET=your_secret
+EMAIL=your_email@ds.study.iitm.ac.in
+```
+
+### Step 4: Deploy
+
+Click "Create Web Service" - it auto-deploys!
+
+---
+
+## 🐳 Deploy with Docker (Any Platform)
+
+### Build Locally
+
+```bash
+# Build image
+docker build -t quiz-solver .
+
+# Run locally
+docker run -p 8000:8000 \
+  -e GEMINI_API_KEY=your_key \
+  -e SECRET=your_secret \
+  -e EMAIL=your_email \
+  quiz-solver
+```
+
+### Push to Docker Hub
+
+```bash
+docker tag quiz-solver your-dockerhub-username/quiz-solver
+docker push your-dockerhub-username/quiz-solver
+```
+
+Then deploy to any Docker-compatible platform!
+
+---
+
+## ⚠️ Why Not Vercel?
+
+Vercel is great for static sites and simple APIs, but has limitations for this project:
+
+| Issue | Vercel | Our Needs |
+|-------|--------|-----------|
+| **Playwright** | ❌ Not supported | ✅ Required for JS rendering |
+| **Timeout** | 10s free / 60s pro | 40+ seconds needed |
+| **Package Size** | 50MB limit | Chromium is ~400MB |
+| **Long-running** | ❌ Serverless only | ✅ Need background tasks |
+
+**Bottom line:** Vercel is optimized for frontend, not browser automation.
+
+---
+
+## 🔧 Troubleshooting
+
+### Railway: "Build Failed"
+
+1. Check Dockerfile syntax
+2. Ensure all files are committed to Git
+3. Check Railway logs for specific error
+
+### Render: "Service is unhealthy"
+
+1. Check if `/health` endpoint returns 200
+2. Verify environment variables are set
+3. Check application logs
+
+### Playwright Not Working
+
+1. Ensure using official Playwright Docker image
+2. Check browser installation: `playwright install chromium`
+3. Verify headless mode is enabled
+
+### Environment Variables Not Loading
+
+1. In Railway: Set in Dashboard → Variables
+2. In Render: Set in Dashboard → Environment
+3. Don't commit `.env` file to Git!
+
+---
+
+## 📊 Monitoring
+
+### Railway
+
+- Built-in logs: Dashboard → Logs
+- Metrics: Dashboard → Metrics
+
+### Render
+
+- Logs: Dashboard → Logs
+- Metrics: Dashboard → Metrics
+
+### Add Health Checks
+
+Your app already has `/health` endpoint:
 ```bash
 curl https://your-app.up.railway.app/health
+# {"status": "healthy"}
 ```
 
-Expected response:
-```json
-{"status": "healthy"}
-```
+---
 
-### Test Quiz Endpoint
+## 💰 Cost Estimate
+
+### Railway
+- **Free**: $5 credit/month
+- **Usage**: ~$0.01/hour for small instance
+- **For testing**: Free tier is sufficient
+
+### Render
+- **Free**: 750 hours/month
+- **Sleep**: Spins down after 15 min inactivity
+- **For testing**: Free tier works
+
+### Fly.io
+- **Free**: $5 credit
+- **Usage**: ~$2/month for small instance
+
+---
+
+## 🎯 Quick Start: Railway
 
 ```bash
+# 1. Install CLI
+npm install -g @railway/cli
+
+# 2. Login
+railway login
+
+# 3. Deploy (from project directory)
+railway init
+railway up
+
+# 4. Set environment variables
+railway variables set GEMINI_API_KEY=your_key
+railway variables set SECRET=your_secret
+railway variables set EMAIL=your_email
+
+# 5. Get URL
+railway open
+
+# 6. Test
 curl -X POST https://your-app.up.railway.app/quiz \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "your_email@example.com",
-    "secret": "your_secret",
-    "url": "https://tds-llm-analysis.s-anand.net/demo"
-  }'
-```
-
-Expected response:
-```json
-{"status": "accepted", "message": "Quiz task received and processing started"}
+  -d '{"email": "your_email", "secret": "your_secret", "url": "https://tds-llm-analysis.s-anand.net/demo"}'
 ```
 
 ---
 
-## 🔧 **Railway Dashboard Features**
+## ✅ Deployment Checklist
 
-### Logs (Most Important!)
-
-1. Click your service
-2. Go to **"Logs"** tab
-3. Watch real-time processing
-
-### Metrics
-
-- CPU usage
-- Memory usage
-- Network I/O
-
-### Variables
-
-- Securely store API keys
-- Changes trigger redeploy
-
-### Domains
-
-- Get free `*.up.railway.app` domain
-- Or add custom domain
-
----
-
-## 📊 **Resource Estimates**
-
-| Resource | Usage | Railway Free Tier |
-|----------|-------|-------------------|
-| Memory | ~512MB peak | 512MB included |
-| CPU | Low (spikes during processing) | Shared CPU |
-| Build time | ~3-5 minutes | 500 hours/month |
-| Execution | ~40-50s per quiz | No timeout |
-
-**Cost estimate:** $0-3/month with light usage (free tier covers most cases)
-
----
-
-## 🐛 **Troubleshooting**
-
-### Build Fails
-
-**Check Docker logs:**
-1. Go to Railway dashboard
-2. Click "Build Logs"
-3. Look for error messages
-
-**Common issues:**
-- Missing dependency → Add to `requirements.txt`
-- Playwright install failed → Check Dockerfile
-
-### Runtime Errors
-
-**Check application logs:**
-1. Go to "Logs" tab
-2. Filter by error level
-3. Look for stack traces
-
-**Common issues:**
-- Missing env var → Add in Variables tab
-- API key invalid → Check GEMINI_API_KEY
-- Timeout → Check network/Gemini API status
-
-### Container Won't Start
-
-**Check:**
-1. Port configuration (`$PORT` env var)
-2. Health check passing
-3. Start command correct
-
----
-
-## 🔄 **CI/CD: Auto-Deploy on Push**
-
-Railway automatically deploys when you push to main branch:
-
-```bash
-# Make changes
-git add .
-git commit -m "Update something"
-git push origin main
-
-# Railway detects push → rebuilds → deploys
-# ~3-5 minutes for new version to be live
-```
-
----
-
-## 🌐 **Custom Domain (Optional)**
-
-### Step 1: Add Domain in Railway
-
-1. Go to Settings → Domains
-2. Click "Add Custom Domain"
-3. Enter: `quiz-solver.yourdomain.com`
-
-### Step 2: Update DNS
-
-Add CNAME record:
-```
-quiz-solver.yourdomain.com → your-app.up.railway.app
-```
-
-### Step 3: Wait for SSL
-
-Railway auto-provisions SSL certificate (5-10 minutes)
-
----
-
-## 📝 **Files Created for Deployment**
-
-```
-project/
-├── Dockerfile          ← Container configuration
-├── railway.json        ← Railway-specific settings
-├── .dockerignore       ← Files to exclude from container
-└── requirements.txt    ← Python dependencies
-```
-
----
-
-## 🎯 **Post-Deployment Checklist**
-
-- [ ] Health endpoint returns 200
-- [ ] Quiz endpoint accepts requests
-- [ ] Logs show processing activity
+- [ ] Code pushed to GitHub
+- [ ] `.env` NOT in repository
+- [ ] Dockerfile tested locally
+- [ ] Railway/Render account created
+- [ ] Environment variables set
+- [ ] `/health` endpoint working
+- [ ] `/quiz` endpoint tested
 - [ ] Demo quiz passes
-- [ ] Environment variables set correctly
-- [ ] No error logs in dashboard
 
 ---
 
-## 💡 **Tips**
-
-### Keep Logs Clean
-```python
-# Use appropriate log levels
-logger.info("Normal operation")
-logger.warning("Something to watch")
-logger.error("Something failed")
-```
-
-### Monitor Costs
-- Check Railway dashboard weekly
-- Free tier: $5 credit/month
-- Most light usage stays free
-
-### Debugging Production
-```bash
-# Test locally with same env vars
-export GEMINI_API_KEY=xxx
-export SECRET=xxx
-export EMAIL=xxx
-python -m uvicorn src.api.endpoint:app --port 8000
-```
-
----
-
-## 🚀 **Alternative Platforms**
-
-If Railway doesn't work for you:
-
-| Platform | Pros | Cons |
-|----------|------|------|
-| **Render.com** | Free tier, easy | Slower cold starts |
-| **Fly.io** | Fast, global | More complex setup |
-| **Google Cloud Run** | Scalable | Requires GCP account |
-| **DigitalOcean Apps** | Simple | $5/month minimum |
-
----
-
-## 📞 **Need Help?**
-
-1. Check Railway docs: [docs.railway.app](https://docs.railway.app)
-2. Check build/deploy logs
-3. Test locally first
-4. Verify environment variables
-
----
-
-**Happy deploying! 🎉**
+**Need help?** Check Railway/Render documentation or open an issue!
 

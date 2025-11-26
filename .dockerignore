@@ -1,42 +1,59 @@
-# Git
-.git
-.gitignore
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environments
+.env
 .venv
-venv
-env
-__pycache__
-*.pyc
+env/
+venv/
+ENV/
 
 # IDE
-.vscode
-.idea
-.cursor
+.idea/
+.vscode/
+*.swp
+*.swo
+.cursor/
+
+# Git
+.git/
+.gitignore
 
 # Documentation (not needed in container)
 docs/
 *.md
 !README.md
 
-# Tests (not needed in container)
+# Tests
 tests/
+test_*.py
 
-# Environment files (will be set via Railway UI)
-.env
-.env.local
-.env.development
-
-# Logs
+# Local files
 *.log
-logs/
-
-# Temporary files
 *.tmp
-*.temp
 .DS_Store
 Thumbs.db
 
 # Project files
 PROJECT_STRUCTURE.txt
+LICENSE
 

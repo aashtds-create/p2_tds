@@ -1,11 +1,10 @@
 """
 Audio processing handler
-Supports multiple transcription backends
+Uses Gemini Audio API for transcription (fast, reliable, no extra dependencies)
 """
 import httpx
 import logging
 import os
-import tempfile
 import base64
 from typing import Any, Dict
 
@@ -14,14 +13,10 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """
     Handles audio processing tasks (transcription, analysis)
-    Supports multiple backends in order of preference:
-    1. Gemini Audio API (multimodal, same API key as text processing)
-    2. SpeechRecognition + Google (free, no API key)
-    3. Local Whisper (fallback, slower but accurate)
+    Uses Gemini Audio API - same API key as text processing
     """
     
     def __init__(self):
-        # Gemini API for audio transcription
         self.gemini_api_key = os.getenv("GEMINI_API_KEY")
     
     async def process(self, url: str) -> Dict[str, Any]:
@@ -43,53 +38,26 @@ class AudioProcessor:
                 response.raise_for_status()
                 audio_bytes = response.content
             
-            # Try transcription methods in order of preference
-            transcription = None
-            method = None
+            logger.info(f"Downloaded {len(audio_bytes)} bytes of audio")
             
-            # Method 1: Gemini Audio API (Primary - multimodal, same API key)
-            if self.gemini_api_key:
-                try:
-                    transcription = await self._transcribe_with_gemini(audio_bytes, url)
-                    method = "gemini_audio"
-                    logger.info("Transcribed using Gemini Audio API")
-                except Exception as e:
-                    logger.warning(f"Gemini transcription failed: {e}, trying alternatives...")
+            # Transcribe using Gemini
+            if not self.gemini_api_key:
+                logger.error("GEMINI_API_KEY not set!")
+                return {"text": "", "error": "GEMINI_API_KEY not configured"}
             
-            # Method 2: SpeechRecognition (Free fallback - Google Web Speech)
-            if not transcription:
-                try:
-                    transcription = await self._transcribe_with_speech_recognition(audio_bytes)
-                    method = "speech_recognition"
-                    logger.info("Transcribed using SpeechRecognition (Google)")
-                except ImportError:
-                    logger.info("SpeechRecognition not available, trying local Whisper...")
-                except Exception as e:
-                    logger.warning(f"SpeechRecognition failed: {e}")
-            
-            # Method 3: Local Whisper (Last resort fallback)
-            if not transcription:
-                try:
-                    transcription = await self._transcribe_with_local_whisper(audio_bytes)
-                    method = "local_whisper"
-                    logger.info("Transcribed using local Whisper model")
-                except ImportError:
-                    logger.info("Local Whisper not available")
-                except Exception as e:
-                    logger.warning(f"Local Whisper failed: {e}")
-            
-            if not transcription:
-                logger.error("All transcription methods failed")
-                return {"text": "", "error": "No transcription backend available"}
-            
-            logger.info(f"Transcription successful. Length: {len(transcription)} chars")
-            logger.info(f"Transcription preview: {transcription[:200]}...")
-            
-            return {
-                "text": transcription,
-                "source": url,
-                "method": method
-            }
+            try:
+                transcription = await self._transcribe_with_gemini(audio_bytes, url)
+                logger.info(f"Transcription successful. Length: {len(transcription)} chars")
+                logger.info(f"Transcription: {transcription[:200]}...")
+                
+                return {
+                    "text": transcription,
+                    "source": url,
+                    "method": "gemini_audio"
+                }
+            except Exception as e:
+                logger.error(f"Gemini transcription failed: {e}")
+                return {"text": "", "error": str(e)}
             
         except Exception as e:
             logger.error(f"Audio processing failed for {url}: {e}")
@@ -119,7 +87,7 @@ class AudioProcessor:
         # Encode audio as base64
         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
         
-        # Prepare Gemini API request (use same model as text processing)
+        # Prepare Gemini API request
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_api_key}"
         
         payload = {
@@ -158,55 +126,3 @@ class AudioProcessor:
             
             logger.error(f"Unexpected Gemini response format: {result}")
             raise Exception("Could not extract transcription from Gemini response")
-    
-    async def _transcribe_with_speech_recognition(self, audio_bytes: bytes) -> str:
-        """
-        Transcribe using SpeechRecognition library (FREE, NO API KEY!)
-        Install: pip install SpeechRecognition pydub
-        """
-        import speech_recognition as sr
-        from pydub import AudioSegment
-        import io
-        
-        # Convert audio to WAV format (required by SpeechRecognition)
-        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-        
-        # Export to WAV in temp file
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-            audio.export(tmp_file.name, format="wav")
-            tmp_path = tmp_file.name
-        
-        try:
-            recognizer = sr.Recognizer()
-            with sr.AudioFile(tmp_path) as source:
-                audio_data = recognizer.record(source)
-                # Use Google Web Speech API (FREE, no key needed)
-                text = recognizer.recognize_google(audio_data)
-                return text
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-    
-    async def _transcribe_with_local_whisper(self, audio_bytes: bytes) -> str:
-        """
-        Transcribe using local Whisper model (NO API KEY NEEDED!)
-        Install: pip install openai-whisper
-        """
-        import whisper
-        
-        # Save audio to temp file (Whisper needs a file path)
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
-            tmp_file.write(audio_bytes)
-            tmp_path = tmp_file.name
-        
-        try:
-            # Load model (use 'base' for speed, 'small/medium/large' for accuracy)
-            model = whisper.load_model("base")
-            
-            # Transcribe
-            result = model.transcribe(tmp_path)
-            return result["text"]
-        finally:
-            # Clean up temp file
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)

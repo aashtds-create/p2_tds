@@ -168,44 +168,49 @@ Key dependencies:
 
 ## 🚢 Deployment
 
-### Railway.app (Recommended) ⭐
+### 🚂 Railway (Recommended)
 
-**Why Railway?**
-- Supports Playwright (headless Chrome)
-- No timeout limits (quiz takes 40-50s)
-- Free $5/month credit
-- Easy GitHub integration
-
-**Quick Deploy:**
-
-1. **Create account** at [railway.app](https://railway.app)
-
-2. **New Project → Deploy from GitHub repo**
-
-3. **Add Environment Variables** in dashboard:
-   ```
-   GEMINI_API_KEY=your_key
-   SECRET=your_secret
-   EMAIL=your_email
-   ```
-
-4. **Generate Domain** in Settings → Domains
-
-5. **Test:**
-   ```bash
-   curl https://your-app.up.railway.app/health
-   ```
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed guide.
-
-### Docker
-
-Pre-configured `Dockerfile` included:
+Railway is the easiest option for deploying this app:
 
 ```bash
-docker build -t quiz-solver .
-docker run -p 8000:8000 -e GEMINI_API_KEY=xxx quiz-solver
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Login and deploy
+railway login
+railway init
+railway up
+
+# Set environment variables
+railway variables set GEMINI_API_KEY=your_key
+railway variables set SECRET=your_secret
+railway variables set EMAIL=your_email@ds.study.iitm.ac.in
 ```
+
+Your app will be live at `https://your-project.up.railway.app`!
+
+### 🐳 Docker
+
+The project includes a Dockerfile ready for deployment:
+
+```bash
+# Build
+docker build -t quiz-solver .
+
+# Run
+docker run -p 8000:8000 \
+  -e GEMINI_API_KEY=your_key \
+  -e SECRET=your_secret \
+  -e EMAIL=your_email \
+  quiz-solver
+```
+
+### ⚠️ Why Not Vercel?
+
+Vercel doesn't support Playwright (browser automation) and has strict timeout limits.
+Use Railway, Render, or Fly.io instead.
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment guide.
 
 ## 📝 License
 

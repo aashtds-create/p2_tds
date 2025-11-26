@@ -3,20 +3,17 @@ Main API endpoint for quiz solver
 """
 import os
 import sys
+import time
 import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
+from dotenv import load_dotenv
 
 # Load environment variables (for local development)
-# In production (Railway), env vars are set via dashboard
-try:
-    from dotenv import load_dotenv
-    # Try multiple .env locations
-    load_dotenv()  # Current directory
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))  # src/.env
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))  # project root
-except ImportError:
-    pass  # dotenv not required in production
+# In production (Railway/Render), env vars are set directly
+load_dotenv()  # Try current directory
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))  # Try src/.env
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))  # Try project root/.env
 
 # Add project root to sys.path to allow imports from src
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -110,7 +107,6 @@ async def health_check():
 
 
 if __name__ == "__main__":
-    # Use PORT from environment (Railway sets this) or default to 8000
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
 
