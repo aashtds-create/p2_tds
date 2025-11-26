@@ -6,9 +6,14 @@ import httpx
 import logging
 import os
 import base64
+import asyncio
 from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
+
+# Rate limit handling
+MAX_RETRIES = 3
+INITIAL_RETRY_DELAY = 5  # seconds
 
 class AudioProcessor:
     """
@@ -106,23 +111,34 @@ class AudioProcessor:
             }]
         }
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json=payload)
-            
-            if response.status_code != 200:
-                error_detail = response.text
-                logger.error(f"Gemini API error {response.status_code}: {error_detail}")
-                raise Exception(f"Gemini API returned {response.status_code}")
-            
-            result = response.json()
-            
-            # Extract transcription from response
-            if "candidates" in result and result["candidates"]:
-                candidate = result["candidates"][0]
-                if "content" in candidate and "parts" in candidate["content"]:
-                    parts = candidate["content"]["parts"]
-                    if parts and "text" in parts[0]:
-                        return parts[0]["text"].strip()
-            
-            logger.error(f"Unexpected Gemini response format: {result}")
-            raise Exception("Could not extract transcription from Gemini response")
+        # Retry logic with exponential backoff
+        for attempt in range(MAX_RETRIES):
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, json=payload)
+                
+                # Handle rate limiting (429)
+                if response.status_code == 429:
+                    retry_delay = INITIAL_RETRY_DELAY * (2 ** attempt)
+                    logger.warning(f"Rate limited (429). Retrying in {retry_delay}s... (attempt {attempt + 1}/{MAX_RETRIES})")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                
+                if response.status_code != 200:
+                    error_detail = response.text
+                    logger.error(f"Gemini API error {response.status_code}: {error_detail}")
+                    raise Exception(f"Gemini API returned {response.status_code}")
+                
+                result = response.json()
+                
+                # Extract transcription from response
+                if "candidates" in result and result["candidates"]:
+                    candidate = result["candidates"][0]
+                    if "content" in candidate and "parts" in candidate["content"]:
+                        parts = candidate["content"]["parts"]
+                        if parts and "text" in parts[0]:
+                            return parts[0]["text"].strip()
+                
+                logger.error(f"Unexpected Gemini response format: {result}")
+                raise Exception("Could not extract transcription from Gemini response")
+        
+        raise Exception(f"Gemini transcription failed after {MAX_RETRIES} retries")

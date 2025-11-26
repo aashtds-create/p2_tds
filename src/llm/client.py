@@ -1,10 +1,15 @@
 import os
 import logging
+import asyncio
 from typing import Optional, Dict, Any
 import httpx
 import json
 
 logger = logging.getLogger(__name__)
+
+# Rate limit handling
+MAX_RETRIES = 3
+INITIAL_RETRY_DELAY = 5  # seconds
 
 class LLMClient:
     """
@@ -63,7 +68,7 @@ class LLMClient:
 
     async def _call_gemini(self, messages: list, api_key: str, temperature: float, json_mode: bool) -> Optional[str]:
         """
-        Call Gemini API via REST
+        Call Gemini API via REST with automatic retry on rate limit
         """
         # Convert OpenAI messages to Gemini format
         contents = []
@@ -94,51 +99,53 @@ class LLMClient:
             
         if json_mode:
             payload["generationConfig"]["response_mime_type"] = "application/json"
-            
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            try:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                result = response.json()
-                
-                # Safely extract text from response
-                if "candidates" in result and len(result["candidates"]) > 0:
-                    content = result["candidates"][0].get("content", {})
-                    parts = content.get("parts", [])
-                    if parts and len(parts) > 0:
-                        return parts[0].get("text", "")
+        
+        # Retry logic with exponential backoff
+        for attempt in range(MAX_RETRIES):
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                try:
+                    response = await client.post(url, json=payload)
+                    
+                    # Handle rate limiting (429)
+                    if response.status_code == 429:
+                        retry_delay = INITIAL_RETRY_DELAY * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"Rate limited (429). Retrying in {retry_delay}s... (attempt {attempt + 1}/{MAX_RETRIES})")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    
+                    response.raise_for_status()
+                    result = response.json()
+                    
+                    # Safely extract text from response
+                    if "candidates" in result and len(result["candidates"]) > 0:
+                        content = result["candidates"][0].get("content", {})
+                        parts = content.get("parts", [])
+                        if parts and len(parts) > 0:
+                            return parts[0].get("text", "")
+                        else:
+                            logger.warning("Gemini response has no parts (empty response)")
+                            return None
                     else:
-                        logger.warning("Gemini response has no parts (empty response)")
+                        logger.warning("Gemini response has no candidates")
                         return None
-                else:
-                    logger.warning("Gemini response has no candidates")
+                        
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429:
+                        retry_delay = INITIAL_RETRY_DELAY * (2 ** attempt)
+                        logger.warning(f"Rate limited (429). Retrying in {retry_delay}s... (attempt {attempt + 1}/{MAX_RETRIES})")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    logger.error(f"Gemini request failed: {e}")
+                    logger.error(f"Response status: {e.response.status_code}")
+                    logger.error(f"Response: {e.response.text}")
                     return None
-            except KeyError as e:
-                logger.error(f"Gemini response parsing failed: {e}")
-                try:
-                    if "response" in locals():
-                        logger.error(f"Response status: {response.status_code}")
-                        logger.error(f"Response: {response.text}")
-                        # Try to handle the case where parts is missing
-                        result = response.json()
-                        if "candidates" in result and len(result["candidates"]) > 0:
-                            content = result["candidates"][0].get("content", {})
-                            parts = content.get("parts", [])
-                            if not parts:
-                                logger.error("Gemini returned empty response (no parts)")
-                                return None
-                except:
-                    pass
-                return None
-            except Exception as e:
-                logger.error(f"Gemini request failed: {e}", exc_info=True)
-                try:
-                    if "response" in locals():
-                        logger.error(f"Response status: {response.status_code}")
-                        logger.error(f"Response: {response.text}")
-                except:
-                    pass
-                return None
+                    
+                except Exception as e:
+                    logger.error(f"Gemini request failed: {e}")
+                    return None
+        
+        logger.error(f"Gemini request failed after {MAX_RETRIES} retries")
+        return None
 
     async def parse_instruction(self, content: str) -> Dict[str, Any]:
         """
