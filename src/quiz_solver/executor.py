@@ -13,6 +13,7 @@ from src.data_processing.analyzer import DataAnalyzer
 from src.data_processing.audio_processor import AudioProcessor
 from src.data_processing.csv_processor import CSVProcessor
 from src.data_processing.computation_solver import ComputationSolver
+from src.data_processing.game_solver import GameSolver
 from src.llm.client import LLMClient
 import logging
 
@@ -34,6 +35,7 @@ class TaskExecutor:
         self.csv_processor = CSVProcessor()
         self.computation_solver = ComputationSolver()
         self.llm_client = LLMClient()
+        self.game_solver = GameSolver(self.llm_client)
         self.current_page_content = None  # Store page content for multi-step tasks
         self.email = None  # Store email for personalized puzzles
         self.previous_answer = None  # Store previous answer for chained puzzles
@@ -66,6 +68,8 @@ class TaskExecutor:
             return await self._handle_visualization_task(instructions, base_url)
         elif instructions.task_type == "analysis":
             return await self._handle_analysis_task(instructions, base_url)
+        elif instructions.task_type == "game":
+            return await self._handle_game_task(instructions, base_url)
         else:
             # Use LLM to handle unknown/complex tasks
             return await self._handle_llm_task(instructions)
@@ -248,6 +252,22 @@ class TaskExecutor:
         """Handle visualization tasks"""
         # Generate visualization and return as base64
         # Implementation would create chart and encode
+        return await self._handle_llm_task(instructions)
+    
+    async def _handle_game_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
+        """Handle game-based puzzles (Tic-Tac-Toe, Wordle, etc.)"""
+        logger.info("Handling game task")
+        
+        # Use full page content for game context
+        content = self.current_page_content if self.current_page_content else instructions.question
+        
+        # Try game solver
+        result = await self.game_solver.solve_game(content)
+        
+        if result:
+            return result
+        
+        # Fallback to LLM
         return await self._handle_llm_task(instructions)
     
     async def _handle_llm_task(self, instructions: QuizInstructions) -> Any:

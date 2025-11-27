@@ -101,7 +101,20 @@ class InstructionParser:
         """Identify the type of task"""
         content_lower = content.lower()
         
-        # Check for media files first
+        # Check for games (HIGH PRIORITY - check early)
+        game_keywords = [
+            'tic-tac-toe', 'tictactoe', 'noughts', 'crosses',
+            'wordle', 'word game', 'guess the word',
+            'sudoku', 'puzzle grid',
+            'chess', 'checkmate', 'chess puzzle',
+            'scribble', 'anagram', 'word puzzle',
+            'play the game', 'make a move', 'your turn',
+            'game board', 'player', 'opponent'
+        ]
+        if any(keyword in content_lower for keyword in game_keywords):
+            return "game"
+        
+        # Check for media files
         if '[media files found]' in content_lower and 'audio:' in content_lower:
             return "audio"
         elif 'audio' in content_lower or 'transcribe' in content_lower or 'listen' in content_lower:
