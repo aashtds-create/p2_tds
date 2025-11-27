@@ -57,6 +57,8 @@ class ComputationSolver:
         """
         try:
             logger.info("Solving SHA256 checksum puzzle")
+            logger.info(f"Content length: {len(content)} chars")
+            logger.info(f"Content preview: {content[:300]}")
             
             # Extract the key (from previous answer or content)
             key = previous_answer
@@ -71,16 +73,38 @@ class ComputationSolver:
             
             logger.info(f"Using key: {key}")
             
-            # Extract the blob to append
-            blob_match = re.search(r"append.*?['\"]([a-f0-9]+)['\"]", content, re.IGNORECASE)
-            if not blob_match:
-                blob_match = re.search(r"blob.*?['\"]([a-f0-9]+)['\"]", content, re.IGNORECASE)
+            # Extract the blob to append - try multiple patterns
+            blob = None
             
-            if not blob_match:
-                logger.error("Could not find blob in content")
+            # Pattern 1: blob 'xxx' or blob "xxx"
+            blob_match = re.search(r"blob\s*['\"]([a-f0-9]+)['\"]", content, re.IGNORECASE)
+            if blob_match:
+                blob = blob_match.group(1)
+            
+            # Pattern 2: append 'xxx' or append "xxx"
+            if not blob:
+                blob_match = re.search(r"append.*?['\"]([a-f0-9]+)['\"]", content, re.IGNORECASE)
+                if blob_match:
+                    blob = blob_match.group(1)
+            
+            # Pattern 3: Just any hex string after "blob" or "append"
+            if not blob:
+                blob_match = re.search(r"(?:blob|append).*?([a-f0-9]{8,})", content, re.IGNORECASE)
+                if blob_match:
+                    blob = blob_match.group(1)
+            
+            # Pattern 4: Look for any standalone hex string (risky but fallback)
+            if not blob:
+                # Find hex strings that look like blobs (8+ chars)
+                hex_strings = re.findall(r'\b([a-f0-9]{8,})\b', content, re.IGNORECASE)
+                # Filter out the key itself
+                hex_strings = [h for h in hex_strings if h != key]
+                if hex_strings:
+                    blob = hex_strings[0]
+            
+            if not blob:
+                logger.error(f"Could not find blob in content. Content: {content[:200]}")
                 return None
-            
-            blob = blob_match.group(1)
             logger.info(f"Blob to append: {blob}")
             
             # Compute SHA256
