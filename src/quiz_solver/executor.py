@@ -12,6 +12,7 @@ from src.data_processing.api_client import APIClient
 from src.data_processing.analyzer import DataAnalyzer
 from src.data_processing.audio_processor import AudioProcessor
 from src.data_processing.csv_processor import CSVProcessor
+from src.data_processing.computation_solver import ComputationSolver
 from src.llm.client import LLMClient
 import logging
 
@@ -31,8 +32,10 @@ class TaskExecutor:
         self.analyzer = DataAnalyzer()
         self.audio_processor = AudioProcessor()
         self.csv_processor = CSVProcessor()
+        self.computation_solver = ComputationSolver()
         self.llm_client = LLMClient()
         self.current_page_content = None  # Store page content for multi-step tasks
+        self.email = None  # Store email for personalized puzzles
     
     async def execute(self, instructions: QuizInstructions, base_url: str = None) -> Any:
         """
@@ -211,8 +214,17 @@ class TaskExecutor:
     
     async def _handle_analysis_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
         """Handle data analysis tasks"""
-        # This would involve fetching data, then analyzing
-        # For now, delegate to LLM
+        # Check if this is an alphametic/computational puzzle
+        if "ALPHAMETIC" in instructions.question.upper() or "SHA1" in instructions.question:
+            logger.info("Detected alphametic/computational puzzle")
+            if self.email:
+                result = await self.computation_solver.solve_alphametic(instructions.question, self.email)
+                if result:
+                    return result
+            else:
+                logger.warning("Email not set for alphametic puzzle")
+        
+        # Otherwise delegate to LLM
         return await self._handle_llm_task(instructions)
     
     async def _handle_visualization_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
@@ -223,6 +235,13 @@ class TaskExecutor:
     
     async def _handle_llm_task(self, instructions: QuizInstructions) -> Any:
         """Use LLM to solve complex/unknown tasks"""
+        # Check if this is an alphametic/computational puzzle
+        if ("ALPHAMETIC" in instructions.question.upper() or "SHA1" in instructions.question) and self.email:
+            logger.info("Detected alphametic/computational puzzle in LLM task")
+            result = await self.computation_solver.solve_alphametic(instructions.question, self.email)
+            if result:
+                return result
+        
         return await self.llm_client.solve_task(
             question=instructions.question,
             data=None

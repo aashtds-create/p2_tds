@@ -27,6 +27,7 @@ class QuizSolver:
         self.renderer = PageRenderer()
         self.parser = InstructionParser()
         self.executor = TaskExecutor(deadline=deadline)
+        self.executor.email = email  # Pass email for personalized puzzles
     
     async def solve(self, url: str):
         """
