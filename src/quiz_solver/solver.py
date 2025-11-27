@@ -58,8 +58,14 @@ class QuizSolver:
             
             # Step 4: Submit the answer (resolve relative submit URL)
             submit_url = instructions.submit_url
-            if submit_url and not submit_url.startswith(('http://', 'https://')):
+            
+            # Fix: Always use /submit endpoint unless explicitly told otherwise
+            if not submit_url or 'submit' not in submit_url:
+                submit_url = "https://tds-llm-analysis.s-anand.net/submit"
+                logger.info(f"Using default submit URL: {submit_url}")
+            elif submit_url and not submit_url.startswith(('http://', 'https://')):
                 submit_url = urljoin(url, submit_url)
+            
             await self._submit_answer(submit_url, answer)
             
         except Exception as e:

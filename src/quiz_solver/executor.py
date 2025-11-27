@@ -215,10 +215,12 @@ class TaskExecutor:
     async def _handle_analysis_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
         """Handle data analysis tasks"""
         # Check if this is an alphametic/computational puzzle
-        if "ALPHAMETIC" in instructions.question.upper() or "SHA1" in instructions.question:
+        # Use current_page_content (raw) instead of parsed question
+        content_to_check = self.current_page_content if self.current_page_content else instructions.question
+        if "ALPHAMETIC" in content_to_check.upper() or "SHA1" in content_to_check:
             logger.info("Detected alphametic/computational puzzle")
             if self.email:
-                result = await self.computation_solver.solve_alphametic(instructions.question, self.email)
+                result = await self.computation_solver.solve_alphametic(content_to_check, self.email)
                 if result:
                     return result
             else:
@@ -236,9 +238,11 @@ class TaskExecutor:
     async def _handle_llm_task(self, instructions: QuizInstructions) -> Any:
         """Use LLM to solve complex/unknown tasks"""
         # Check if this is an alphametic/computational puzzle
-        if ("ALPHAMETIC" in instructions.question.upper() or "SHA1" in instructions.question) and self.email:
+        # Use current_page_content (raw) instead of parsed question
+        content_to_check = self.current_page_content if self.current_page_content else instructions.question
+        if ("ALPHAMETIC" in content_to_check.upper() or "SHA1" in content_to_check) and self.email:
             logger.info("Detected alphametic/computational puzzle in LLM task")
-            result = await self.computation_solver.solve_alphametic(instructions.question, self.email)
+            result = await self.computation_solver.solve_alphametic(content_to_check, self.email)
             if result:
                 return result
         
