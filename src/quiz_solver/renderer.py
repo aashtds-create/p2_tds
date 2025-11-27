@@ -5,6 +5,9 @@ from playwright.async_api import async_playwright, Browser, Page
 import asyncio
 from typing import Optional
 import logging
+import base64
+import os
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,14 @@ class PageRenderer:
             # The quiz might be anywhere on the page
             content = await page.evaluate("document.body.innerText")
             
+            # If content is empty or too short, try canvas extraction with Gemini Vision
+            if len(content.strip()) < 50:
+                logger.warning(f"Text extraction returned only {len(content)} chars. Trying vision extraction for canvas content...")
+                canvas_content = await self._extract_canvas_content(page)
+                if canvas_content:
+                    content = canvas_content
+                    logger.info("Successfully extracted content from canvas using Gemini Vision")
+            
             # Also check for media files (audio, video) and data files (CSV, PDF, etc.)
             media_info = await page.evaluate("""() => {
                 const audioElements = Array.from(document.querySelectorAll('audio source, audio'));
@@ -93,6 +104,71 @@ class PageRenderer:
             raise
         finally:
             await page.close()
+    
+    async def _extract_canvas_content(self, page: Page) -> Optional[str]:
+        """
+        Extract content from canvas-rendered pages using Gemini Vision
+        
+        Args:
+            page: Playwright page object
+            
+        Returns:
+            Extracted text from the screenshot, or None if failed
+        """
+        try:
+            gemini_api_key = os.getenv("GEMINI_API_KEY")
+            if not gemini_api_key:
+                logger.warning("GEMINI_API_KEY not set, cannot extract canvas content")
+                return None
+            
+            # Take a screenshot
+            screenshot_bytes = await page.screenshot(full_page=True, type="png")
+            
+            # Encode as base64
+            screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+            
+            # Call Gemini Vision API
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+            
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": screenshot_base64
+                            }
+                        },
+                        {
+                            "text": "Extract all text from this image. Return the exact text as it appears, maintaining formatting and structure. If there are instructions, puzzles, or questions, extract them word-for-word."
+                        }
+                    ]
+                }]
+            }
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, json=payload)
+                
+                if response.status_code != 200:
+                    logger.error(f"Gemini Vision API error {response.status_code}: {response.text}")
+                    return None
+                
+                result = response.json()
+                
+                # Extract text from response
+                if "candidates" in result and result["candidates"]:
+                    candidate = result["candidates"][0]
+                    if "content" in candidate and "parts" in candidate["content"]:
+                        parts = candidate["content"]["parts"]
+                        if parts and "text" in parts[0]:
+                            return parts[0]["text"].strip()
+                
+                logger.error(f"Unexpected Gemini Vision response format: {result}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error extracting canvas content: {e}")
+            return None
     
     async def close(self):
         """Clean up browser resources"""

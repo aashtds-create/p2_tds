@@ -73,10 +73,10 @@ project2/
    ```
 
 3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   playwright install chromium
-   ```
+```bash
+pip install -r requirements.txt
+playwright install chromium
+```
 
 4. **Set up environment variables:**
    
@@ -86,7 +86,7 @@ project2/
    ```
 
 5. **Run the server:**
-   ```bash
+```bash
    python src/api/endpoint.py
    ```
 
