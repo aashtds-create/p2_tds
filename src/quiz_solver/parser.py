@@ -71,12 +71,14 @@ class InstructionParser:
         url_pattern = r'https?://[^\s<>"\'\)]+'
         urls = re.findall(url_pattern, content)
         
-        # Usually the submit URL is mentioned explicitly
+        # Prioritize URLs containing 'submit'
         for url in urls:
-            if 'submit' in url.lower() or 'post' in content.lower():
+            if 'submit' in url.lower():
                 return url
         
-        return urls[0] if urls else ""
+        # Default to standard submit endpoint
+        # Most quizzes submit to /submit regardless of what the question says
+        return "https://tds-llm-analysis.s-anand.net/submit"
     
     def _extract_data_source(self, content: str) -> Optional[str]:
         """Extract data source URL or file path"""

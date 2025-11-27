@@ -102,7 +102,7 @@ class LLMClient:
         
         # Retry logic with exponential backoff
         for attempt in range(MAX_RETRIES):
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 try:
                     response = await client.post(url, json=payload)
                     
