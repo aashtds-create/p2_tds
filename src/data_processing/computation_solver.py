@@ -14,30 +14,94 @@ class ComputationSolver:
     (e.g., alphametic puzzles, hash calculations, formulas)
     """
     
-    async def solve_alphametic(self, content: str, email: str) -> Optional[str]:
+    async def solve_alphametic(self, content: str, email: str, previous_answer: str = None) -> Optional[str]:
         """
         Solve alphametic puzzles with computational formulas
         
         Args:
             content: The puzzle content
             email: The user's email for personalized puzzles
+            previous_answer: Previous answer (for chained puzzles)
             
         Returns:
             The computed answer as a string
         """
         try:
-            logger.info(f"Solving alphametic puzzle for email: {email}")
+            logger.info(f"Solving computational puzzle for email: {email}")
             
-            # Check if this is the FORK+LIME type puzzle
-            if "SHA1" in content and "emailNumber" in content:
+            # SHA256 checksum puzzles
+            if "SHA256" in content or "checksum" in content.lower():
+                return await self._solve_sha256_checksum(content, previous_answer)
+            
+            # SHA1-based formulas
+            elif "SHA1" in content and "emailNumber" in content:
                 return await self._solve_sha1_formula(content, email)
             
             # Add more alphametic types here as needed
-            logger.warning("Unknown alphametic type")
+            logger.warning("Unknown computational puzzle type")
             return None
             
         except Exception as e:
-            logger.error(f"Error solving alphametic: {e}")
+            logger.error(f"Error solving computation: {e}")
+            return None
+    
+    async def _solve_sha256_checksum(self, content: str, previous_answer: str) -> Optional[str]:
+        """
+        Solve SHA256 checksum puzzles
+        
+        Example:
+        - Take key from previous puzzle (e.g., '87266151')
+        - Append blob (e.g., '8b1f4c3a2d')
+        - Compute SHA256(key + blob)
+        - Return first N hex characters
+        """
+        try:
+            logger.info("Solving SHA256 checksum puzzle")
+            
+            # Extract the key (from previous answer or content)
+            key = previous_answer
+            if not key:
+                # Try to extract from content
+                key_match = re.search(r'8-digit key.*?(\d{8})', content)
+                if key_match:
+                    key = key_match.group(1)
+                else:
+                    logger.error("Could not find key for SHA256 checksum")
+                    return None
+            
+            logger.info(f"Using key: {key}")
+            
+            # Extract the blob to append
+            blob_match = re.search(r"append.*?['\"]([a-f0-9]+)['\"]", content, re.IGNORECASE)
+            if not blob_match:
+                blob_match = re.search(r"blob.*?['\"]([a-f0-9]+)['\"]", content, re.IGNORECASE)
+            
+            if not blob_match:
+                logger.error("Could not find blob in content")
+                return None
+            
+            blob = blob_match.group(1)
+            logger.info(f"Blob to append: {blob}")
+            
+            # Compute SHA256
+            combined = key + blob
+            sha256_hash = hashlib.sha256(combined.encode()).hexdigest()
+            logger.info(f"SHA256({combined}) = {sha256_hash}")
+            
+            # Extract how many hex characters to return
+            hex_count_match = re.search(r'first\s+(\d+)\s+hex', content, re.IGNORECASE)
+            if hex_count_match:
+                hex_count = int(hex_count_match.group(1))
+            else:
+                hex_count = 12  # Default to 12
+            
+            result = sha256_hash[:hex_count]
+            logger.info(f"Returning first {hex_count} hex chars: {result}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in SHA256 checksum solving: {e}")
             return None
     
     async def _solve_sha1_formula(self, content: str, email: str) -> Optional[str]:

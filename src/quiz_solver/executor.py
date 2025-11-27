@@ -36,6 +36,7 @@ class TaskExecutor:
         self.llm_client = LLMClient()
         self.current_page_content = None  # Store page content for multi-step tasks
         self.email = None  # Store email for personalized puzzles
+        self.previous_answer = None  # Store previous answer for chained puzzles
     
     async def execute(self, instructions: QuizInstructions, base_url: str = None) -> Any:
         """
@@ -217,14 +218,28 @@ class TaskExecutor:
         # Check if this is an alphametic/computational puzzle
         # Use current_page_content (raw) instead of parsed question
         content_to_check = self.current_page_content if self.current_page_content else instructions.question
-        if "ALPHAMETIC" in content_to_check.upper() or "SHA1" in content_to_check:
-            logger.info("Detected alphametic/computational puzzle")
+        
+        # Check for computational puzzle types
+        is_computational = any([
+            "ALPHAMETIC" in content_to_check.upper(),
+            "SHA1" in content_to_check,
+            "SHA256" in content_to_check,
+            "checksum" in content_to_check.lower(),
+            "hash" in content_to_check.lower() and "compute" in content_to_check.lower()
+        ])
+        
+        if is_computational:
+            logger.info("Detected computational puzzle")
             if self.email:
-                result = await self.computation_solver.solve_alphametic(content_to_check, self.email)
+                result = await self.computation_solver.solve_alphametic(
+                    content_to_check, 
+                    self.email,
+                    previous_answer=self.previous_answer
+                )
                 if result:
                     return result
             else:
-                logger.warning("Email not set for alphametic puzzle")
+                logger.warning("Email not set for computational puzzle")
         
         # Otherwise delegate to LLM
         return await self._handle_llm_task(instructions)
@@ -237,12 +252,25 @@ class TaskExecutor:
     
     async def _handle_llm_task(self, instructions: QuizInstructions) -> Any:
         """Use LLM to solve complex/unknown tasks"""
-        # Check if this is an alphametic/computational puzzle
+        # Check if this is a computational puzzle
         # Use current_page_content (raw) instead of parsed question
         content_to_check = self.current_page_content if self.current_page_content else instructions.question
-        if ("ALPHAMETIC" in content_to_check.upper() or "SHA1" in content_to_check) and self.email:
-            logger.info("Detected alphametic/computational puzzle in LLM task")
-            result = await self.computation_solver.solve_alphametic(content_to_check, self.email)
+        
+        is_computational = any([
+            "ALPHAMETIC" in content_to_check.upper(),
+            "SHA1" in content_to_check,
+            "SHA256" in content_to_check,
+            "checksum" in content_to_check.lower(),
+            "hash" in content_to_check.lower() and "compute" in content_to_check.lower()
+        ])
+        
+        if is_computational and self.email:
+            logger.info("Detected computational puzzle in LLM task")
+            result = await self.computation_solver.solve_alphametic(
+                content_to_check,
+                self.email,
+                previous_answer=self.previous_answer
+            )
             if result:
                 return result
         

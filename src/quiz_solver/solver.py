@@ -56,6 +56,9 @@ class QuizSolver:
             answer = await self.executor.execute(instructions, base_url=url)
             logger.info(f"Generated answer: {answer}")
             
+            # Store answer for chained puzzles
+            self.executor.previous_answer = str(answer) if answer is not None else None
+            
             # Step 4: Submit the answer (resolve relative submit URL)
             submit_url = instructions.submit_url
             
