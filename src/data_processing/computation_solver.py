@@ -29,13 +29,13 @@ class ComputationSolver:
         try:
             logger.info(f"Solving computational puzzle for email: {email}")
             
-            # SHA256 checksum puzzles
-            if "SHA256" in content or "checksum" in content.lower():
-                return await self._solve_sha256_checksum(content, previous_answer)
-            
-            # SHA1-based formulas
-            elif "SHA1" in content and "emailNumber" in content:
+            # SHA1-based formulas (check FIRST - more specific)
+            if "SHA1" in content and "emailNumber" in content:
                 return await self._solve_sha1_formula(content, email)
+            
+            # SHA256 checksum puzzles (check AFTER SHA1)
+            elif "SHA256" in content or "checksum" in content.lower():
+                return await self._solve_sha256_checksum(content, previous_answer)
             
             # Add more alphametic types here as needed
             logger.warning("Unknown computational puzzle type")
