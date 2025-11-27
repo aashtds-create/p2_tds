@@ -260,8 +260,11 @@ class TaskExecutor:
             "ALPHAMETIC" in content_to_check.upper(),
             "SHA1" in content_to_check,
             "SHA256" in content_to_check,
+            "MD5" in content_to_check,
             "checksum" in content_to_check.lower(),
-            "hash" in content_to_check.lower() and "compute" in content_to_check.lower()
+            "hash" in content_to_check.lower() and "compute" in content_to_check.lower(),
+            "fibonacci" in content_to_check.lower(),
+            "prime" in content_to_check.lower()
         ])
         
         if is_computational and self.email:
@@ -274,8 +277,51 @@ class TaskExecutor:
             if result:
                 return result
         
+        # Enhanced LLM solve with more context
+        return await self._solve_with_enhanced_llm(instructions, content_to_check)
+    
+    async def _solve_with_enhanced_llm(self, instructions: QuizInstructions, full_content: str) -> Any:
+        """
+        Enhanced LLM solving with better prompting and context
+        """
+        # Build comprehensive context
+        context_parts = []
+        
+        # Add full page content
+        if full_content:
+            context_parts.append(f"Page Content:\n{full_content}")
+        
+        # Add previous answer if available (for chained puzzles)
+        if self.previous_answer:
+            context_parts.append(f"\nPrevious Answer: {self.previous_answer}")
+        
+        # Add any parsed data source
+        if instructions.data_source:
+            context_parts.append(f"\nData Source: {instructions.data_source}")
+        
+        context = "\n\n".join(context_parts)
+        
+        # Enhanced prompt for unknown tasks
+        enhanced_question = f"""
+Task: {instructions.question}
+
+{context}
+
+CRITICAL INSTRUCTIONS:
+- Analyze the task carefully
+- If it requires computation (math, hashing, formulas), show your work
+- If it requires data extraction, identify the source and method
+- Return ONLY the final answer value (no explanations, no "The answer is...")
+- If the answer is a number, return just the number
+- If the answer is text, return just the text
+- If previous answer is provided, use it if relevant
+
+Answer:"""
+        
+        logger.info(f"Enhanced LLM prompt length: {len(enhanced_question)} chars")
+        
         return await self.llm_client.solve_task(
-            question=instructions.question,
+            question=enhanced_question,
             data=None
         )
 

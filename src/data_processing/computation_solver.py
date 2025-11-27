@@ -37,6 +37,26 @@ class ComputationSolver:
             elif "SHA256" in content or "checksum" in content.lower():
                 return await self._solve_sha256_checksum(content, previous_answer)
             
+            # MD5 hash puzzles
+            elif "MD5" in content:
+                return await self._solve_md5_puzzle(content, email, previous_answer)
+            
+            # Fibonacci sequence
+            elif "fibonacci" in content.lower():
+                return await self._solve_fibonacci(content)
+            
+            # Prime number problems
+            elif "prime" in content.lower() and any(word in content.lower() for word in ["factor", "number"]):
+                return await self._solve_prime_problem(content)
+            
+            # Base64 encoding/decoding
+            elif "base64" in content.lower():
+                return await self._solve_base64_problem(content, previous_answer)
+            
+            # Simple arithmetic
+            elif re.search(r'\d+\s*[+\-*/]\s*\d+', content):
+                return await self._solve_arithmetic(content)
+            
             # Add more alphametic types here as needed
             logger.warning("Unknown computational puzzle type")
             return None
@@ -178,5 +198,146 @@ class ComputationSolver:
                 
         except Exception as e:
             logger.error(f"Error in SHA1 formula solving: {e}")
+            return None
+    
+    async def _solve_md5_puzzle(self, content: str, email: str, previous_answer: str) -> Optional[str]:
+        """Solve MD5 hash puzzles"""
+        try:
+            logger.info("Solving MD5 puzzle")
+            md5_hash = hashlib.md5(email.encode()).hexdigest()
+            logger.info(f"MD5({email}) = {md5_hash}")
+            
+            # Extract how many characters to return
+            char_match = re.search(r'first\s+(\d+)', content, re.IGNORECASE)
+            if char_match:
+                num_chars = int(char_match.group(1))
+                return md5_hash[:num_chars]
+            
+            return md5_hash
+        except Exception as e:
+            logger.error(f"Error in MD5 solving: {e}")
+            return None
+    
+    async def _solve_fibonacci(self, content: str) -> Optional[str]:
+        """Solve Fibonacci sequence problems"""
+        try:
+            logger.info("Solving Fibonacci puzzle")
+            
+            # Extract which Fibonacci number is requested
+            n_match = re.search(r'fibonacci.*?(\d+)', content, re.IGNORECASE)
+            if not n_match:
+                n_match = re.search(r'(\d+).*?fibonacci', content, re.IGNORECASE)
+            
+            if n_match:
+                n = int(n_match.group(1))
+                logger.info(f"Computing Fibonacci({n})")
+                
+                # Compute nth Fibonacci number
+                if n <= 1:
+                    return str(n)
+                
+                a, b = 0, 1
+                for _ in range(2, n + 1):
+                    a, b = b, a + b
+                
+                logger.info(f"Fibonacci({n}) = {b}")
+                return str(b)
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error in Fibonacci solving: {e}")
+            return None
+    
+    async def _solve_prime_problem(self, content: str) -> Optional[str]:
+        """Solve prime number problems (factorization, nth prime, etc.)"""
+        try:
+            logger.info("Solving prime number puzzle")
+            
+            # Check if it's prime factorization
+            if "factor" in content.lower():
+                # Extract number to factorize
+                num_match = re.search(r'factor.*?(\d+)', content, re.IGNORECASE)
+                if not num_match:
+                    num_match = re.search(r'(\d+).*?factor', content, re.IGNORECASE)
+                
+                if num_match:
+                    n = int(num_match.group(1))
+                    logger.info(f"Finding prime factors of {n}")
+                    
+                    factors = []
+                    d = 2
+                    while d * d <= n:
+                        while n % d == 0:
+                            factors.append(d)
+                            n //= d
+                        d += 1
+                    if n > 1:
+                        factors.append(n)
+                    
+                    logger.info(f"Prime factors: {factors}")
+                    return str(factors)
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error in prime solving: {e}")
+            return None
+    
+    async def _solve_base64_problem(self, content: str, previous_answer: str) -> Optional[str]:
+        """Solve base64 encoding/decoding problems"""
+        try:
+            logger.info("Solving base64 puzzle")
+            import base64 as b64
+            
+            # Check if encoding or decoding
+            if "encode" in content.lower():
+                # Encode previous answer or extract text
+                text = previous_answer or content
+                encoded = b64.b64encode(text.encode()).decode()
+                logger.info(f"Base64 encoded: {encoded}")
+                return encoded
+            
+            elif "decode" in content.lower():
+                # Find base64 string to decode
+                b64_match = re.search(r'([A-Za-z0-9+/]+=*)', content)
+                if b64_match:
+                    encoded = b64_match.group(1)
+                    decoded = b64.b64decode(encoded).decode()
+                    logger.info(f"Base64 decoded: {decoded}")
+                    return decoded
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error in base64 solving: {e}")
+            return None
+    
+    async def _solve_arithmetic(self, content: str) -> Optional[str]:
+        """Solve simple arithmetic expressions"""
+        try:
+            logger.info("Solving arithmetic puzzle")
+            
+            # Extract expression like "123 + 456" or "50 * 20"
+            expr_match = re.search(r'(\d+)\s*([+\-*/])\s*(\d+)', content)
+            if expr_match:
+                a = int(expr_match.group(1))
+                op = expr_match.group(2)
+                b = int(expr_match.group(3))
+                
+                result = None
+                if op == '+':
+                    result = a + b
+                elif op == '-':
+                    result = a - b
+                elif op == '*':
+                    result = a * b
+                elif op == '/':
+                    result = a // b if b != 0 else None
+                
+                if result is not None:
+                    logger.info(f"{a} {op} {b} = {result}")
+                    return str(result)
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error in arithmetic solving: {e}")
             return None
 
