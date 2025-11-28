@@ -162,7 +162,6 @@ class TaskExecutor:
             
             # Now find the specific item requested
             # Look for ID in question
-            import re
             id_match = re.search(r'ID\s*(\d+)', instructions.question, re.IGNORECASE)
             if id_match:
                 target_id = int(id_match.group(1))
@@ -201,19 +200,23 @@ class TaskExecutor:
             
             # Enhanced prompt for scraping tasks to help LLM understand what to extract
             enhanced_question = f"""
-{instructions.question}
+TASK: {instructions.question}
 
-Page Content:
+PAGE CONTENT (HTML/TEXT):
 {self.current_page_content}
 
-INSTRUCTIONS:
-- Carefully read the page content above
-- Look for hidden elements, reversed text, or special patterns
-- If text needs to be un-reversed/reversed, do so
-- Extract the exact answer requested
-- Return ONLY the final answer value (no explanations)
+CRITICAL INSTRUCTIONS:
+1. Search the page content above for any hidden or special text
+2. Look for text in tags with classes like "hidden-key", "secret", "password", etc.
+3. If the text is REVERSED (like "!dlroWolleH"), UN-REVERSE it (to "HelloWorld!")
+4. If asked for "un-reversed password", find the reversed text and reverse it back
+5. Return ONLY the final answer - just the text value, nothing else
 
-Answer:"""
+Examples:
+- If you find "!dlroWolleH" and asked to un-reverse → return "HelloWorld!"
+- If you find "abc123" in a hidden div → return "abc123"
+
+Now find the answer:"""
             
             # Use current page content with enhanced prompt
             answer = await self.llm_client.solve_task(
@@ -254,7 +257,6 @@ Answer:"""
         additional_data = None
         if "csv" in transcription.lower() and self.current_page_content:
             # Extract CSV URL from page content
-            import re
             csv_urls = re.findall(r'Data files \(CSV/PDF/etc\): ([^\n]+)', self.current_page_content)
             if csv_urls:
                 csv_url_str = csv_urls[0]
@@ -272,7 +274,6 @@ Answer:"""
             df = additional_data["dataframe"]
             
             # Parse the cutoff value from page content or transcription
-            import re
             cutoff_match = re.search(r'Cutoff:\s*(\d+)', self.current_page_content or "")
             if cutoff_match:
                 cutoff = int(cutoff_match.group(1))
