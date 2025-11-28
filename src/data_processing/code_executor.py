@@ -21,6 +21,7 @@ class CodeExecutor:
     def __init__(self, llm_client):
         self.llm_client = llm_client
         self.timeout = 30  # seconds for code execution
+        self.max_generation_retries = 3
     
     async def solve_with_code(self, task_description: str, data: Any = None) -> Optional[str]:
         """
@@ -34,11 +35,20 @@ class CodeExecutor:
             Result from code execution
         """
         try:
-            # Step 1: Generate code
-            code = await self._generate_code(task_description, data)
+            logger.info(f"Attempting dynamic code generation for task: {task_description[:120]}...")
+            logger.info(f"CodeExecutor data summary: {self._summarize_data(data)}")
+            
+            # Step 1: Generate code (with retries)
+            code = None
+            for attempt in range(1, self.max_generation_retries + 1):
+                code = await self._generate_code(task_description, data)
+                if code:
+                    break
+                logger.warning(f"Code generation attempt {attempt} failed, retrying...")
+                await asyncio.sleep(1 * attempt)
             
             if not code:
-                logger.error("Failed to generate code")
+                logger.error("Failed to generate code after multiple attempts")
                 return None
             
             logger.info(f"Generated code ({len(code)} chars)")
@@ -110,10 +120,13 @@ Generate the code now (inside ```python code blocks):
         ])
         
         if not response:
+            logger.warning("LLM returned empty response while generating code")
             return None
         
         # Extract code from response
         code = self._extract_code_from_response(response)
+        if not code:
+            logger.warning("LLM response did not contain executable code")
         return code
     
     def _extract_code_from_response(self, response: str) -> Optional[str]:
@@ -157,6 +170,19 @@ Generate the code now (inside ```python code blocks):
         
         # Last resort: return response as-is
         return response.strip()
+    
+    def _summarize_data(self, data: Any) -> str:
+        """Summarize data structure for logging purposes"""
+        if data is None:
+            return "No data provided"
+        if isinstance(data, str):
+            return f"String (len={len(data)})"
+        if isinstance(data, list):
+            return f"List (len={len(data)}) - first item type: {type(data[0]).__name__ if data else 'N/A'}"
+        if isinstance(data, dict):
+            keys = list(data.keys())
+            return f"Dict keys: {keys[:5]}{'...' if len(keys) > 5 else ''}"
+        return f"Data type: {type(data).__name__}"
     
     async def _execute_code(self, code: str) -> Optional[str]:
         """

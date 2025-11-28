@@ -2,8 +2,8 @@
 Task execution - routes to appropriate handlers
 """
 from datetime import datetime
-from typing import Any
-from urllib.parse import urljoin
+from typing import Any, Dict, List
+from urllib.parse import urljoin, urlparse
 import re
 import logging
 
@@ -117,13 +117,12 @@ class TaskExecutor:
             raise ValueError("No data source provided")
         
         # Resolve relative URLs
-        api_url = self._resolve_url(instructions.data_source, base_url)
+        primary_api_url = self._resolve_url(instructions.data_source, base_url)
         
         # Parse authentication headers from question
         headers = {}
         question_text = instructions.question
         
-        # Look for header requirements like "X-API-Key with value weather-alpha-key"
         header_pattern = r'header\s+([A-Za-z0-9-]+)\s+with\s+value\s+([A-Za-z0-9-]+)'
         header_match = re.search(header_pattern, question_text, re.IGNORECASE)
         if header_match:
@@ -132,28 +131,39 @@ class TaskExecutor:
             headers[header_name] = header_value
             logger.info(f"Found auth header: {header_name}: {header_value}")
         
-        # Check if this is a pagination task
-        question_lower = instructions.question.lower()
-        is_pagination = any(kw in question_lower for kw in ['pagination', 'multiple pages', 'all pages', 'traverse', 'page='])
+        # Build list of API URLs to fetch (for multi-endpoint pipelines)
+        api_urls: List[str] = [primary_api_url]
+        combined_text = instructions.question
+        if self.current_page_content:
+            combined_text += "\n" + self.current_page_content
         
-        if is_pagination and '?page=' in api_url:
+        additional_urls = re.findall(r'https?://[^\s<>"\'\)]+', combined_text)
+        for url in additional_urls:
+            clean_url = self._clean_url(url)
+            if clean_url and '/api/' in clean_url and clean_url not in api_urls:
+                api_urls.append(clean_url)
+        
+        # Check if this is a pagination task (only applies when dealing with a single paged endpoint)
+        question_lower = instructions.question.lower()
+        is_pagination = len(api_urls) == 1 and '?page=' in primary_api_url and any(
+            kw in question_lower for kw in ['pagination', 'multiple pages', 'all pages', 'traverse', 'page=']
+        )
+        
+        if is_pagination:
             logger.info("Detected pagination task - fetching all pages")
-            # Fetch all pages
             all_items = []
             page = 1
             max_pages = 100  # Safety limit
             
             while page <= max_pages:
-                # Update page number in URL
-                current_url = re.sub(r'page=\d+', f'page={page}', api_url)
+                current_url = re.sub(r'page=\d+', f'page={page}', primary_api_url)
                 logger.info(f"Fetching page {page}: {current_url}")
                 
                 try:
                     page_data = await self.api_client.fetch(current_url, headers=headers)
                     
-                    # Check if data is a list
                     if isinstance(page_data, list):
-                        if not page_data:  # Empty list means we're done
+                        if not page_data:
                             logger.info(f"Reached end of pagination at page {page}")
                             break
                         all_items.extend(page_data)
@@ -173,8 +183,6 @@ class TaskExecutor:
             
             logger.info(f"Fetched total of {len(all_items)} items across {page-1} pages")
             
-            # Now find the specific item requested
-            # Look for ID in question
             id_match = re.search(r'ID\s*(\d+)', instructions.question, re.IGNORECASE)
             if id_match:
                 target_id = int(id_match.group(1))
@@ -182,27 +190,44 @@ class TaskExecutor:
                 
                 for item in all_items:
                     if isinstance(item, dict) and item.get('id') == target_id:
-                        # Return the name field
                         answer = item.get('name', item.get('title', str(item)))
                         logger.info(f"Found item with ID {target_id}: {answer}")
                         return answer
                 
                 logger.warning(f"Item with ID {target_id} not found in {len(all_items)} items")
             
-            # If we can't find it directly, use LLM with all data
-            api_data = all_items
+            api_data: Any = all_items
         else:
-            # Single API fetch (no pagination)
-            api_data = await self.api_client.fetch(api_url, headers=headers)
+            # Fetch each API endpoint (for multi-source pipelines)
+            api_results: Dict[str, Any] = {}
+            for url in api_urls:
+                try:
+                    data = await self.api_client.fetch(url, headers=headers)
+                    key = self._derive_data_key_from_url(url)
+                    api_results[key] = data
+                    logger.info(f"Fetched data for '{key}' ({len(str(data))} chars)")
+                except Exception as e:
+                    logger.error(f"API fetch failed for {url}: {e}")
+                    raise
+            
+            api_data = api_results if len(api_results) > 1 else next(iter(api_results.values()))
+            
+            if len(api_results) > 1:
+                logger.info(f"Detected multi-endpoint pipeline with datasets: {list(api_results.keys())}")
+                pipeline_result = await self.code_executor.solve_with_code(
+                    task_description=instructions.question,
+                    data=api_results
+                )
+                if pipeline_result:
+                    return pipeline_result
         
         # Check if this is a data cleaning or complex data processing task
         question_lower = instructions.question.lower()
         is_data_cleaning = any(kw in question_lower for kw in ['clean', 'messy', 'dirty', 'invalid', 'extract numeric', 'parse'])
-        is_complex_calc = any(kw in question_lower for kw in ['sum of', 'calculate', 'highest', 'lowest', 'maximum', 'minimum'])
+        is_complex_calc = any(kw in question_lower for kw in ['sum of', 'calculate', 'highest', 'lowest', 'maximum', 'minimum', 'join', 'orders', 'users'])
         
-        if is_data_cleaning or (is_complex_calc and isinstance(api_data, (list, dict))):
+        if is_data_cleaning or is_complex_calc:
             logger.info("Detected data cleaning or complex calculation task - using code executor")
-            # Use code executor for precise data processing
             result = await self.code_executor.solve_with_code(
                 task_description=instructions.question,
                 data=api_data
@@ -483,16 +508,41 @@ Now find the answer:"""
         """Handle geo-spatial tasks using code generation"""
         logger.info("Handling geo-spatial task")
         
-        # Use code executor for geo-spatial calculations
+        geo_data = None
+        source_url = None
+        
+        if instructions.data_source:
+            source_url = self._resolve_url(instructions.data_source, base_url)
+        else:
+            # Try to extract a URL from the question/page content
+            combined_text = instructions.question
+            if self.current_page_content:
+                combined_text += "\n" + self.current_page_content
+            potential_urls = re.findall(r'https?://[^\s<>"\'\)]+', combined_text)
+            for url in potential_urls:
+                clean_url = self._clean_url(url)
+                if '/api/' in clean_url:
+                    source_url = self._resolve_url(clean_url, base_url)
+                    break
+        
+        if source_url:
+            try:
+                geo_data = await self.api_client.fetch(source_url)
+            except Exception as e:
+                logger.error(f"Failed to fetch geo data from {source_url}: {e}")
+        
+        if not geo_data:
+            logger.warning("Geo data not available, using page content as fallback")
+            geo_data = self.current_page_content or instructions.question
+        
         result = await self.code_executor.solve_geospatial_task(
             task=instructions.question,
-            data=self.current_page_content
+            data=geo_data
         )
         
         if result:
             return result
         
-        # Fallback to LLM
         return await self._handle_llm_task(instructions)
     
     async def _handle_llm_task(self, instructions: QuizInstructions) -> Any:
@@ -525,6 +575,20 @@ Now find the answer:"""
         # Enhanced LLM solve with more context
         return await self._solve_with_enhanced_llm(instructions, content_to_check)
     
+    def _clean_url(self, url: str) -> str:
+        """Remove trailing punctuation from URLs"""
+        while url and url[-1] in '.,;:!?)':
+            url = url[:-1]
+        return url
+
+    def _derive_data_key_from_url(self, url: str) -> str:
+        """Create a short key name based on the URL path"""
+        parsed = urlparse(url)
+        path_parts = [part for part in parsed.path.split('/') if part]
+        if path_parts:
+            return path_parts[-1]
+        return parsed.netloc or url
+
     async def _solve_with_enhanced_llm(self, instructions: QuizInstructions, full_content: str) -> Any:
         """
         Enhanced LLM solving with better prompting and context
