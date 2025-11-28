@@ -131,8 +131,18 @@ class TaskExecutor:
     
     async def _handle_scraping_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
         """Handle web scraping tasks"""
+        # If no data_source, use current page content (data is on the current page)
         if not instructions.data_source:
-            raise ValueError("No data source provided")
+            logger.info("No separate data source - using current page content for scraping task")
+            if not self.current_page_content:
+                raise ValueError("No data source and no current page content available")
+            
+            # Use current page content
+            answer = await self.llm_client.solve_task(
+                question=instructions.question,
+                data=self.current_page_content
+            )
+            return answer
         
         # Resolve relative URLs
         scrape_url = self._resolve_url(instructions.data_source, base_url)
