@@ -71,6 +71,9 @@ class InstructionParser:
         url_pattern = r'https?://[^\s<>"\'\)]+'
         urls = re.findall(url_pattern, content)
         
+        # Clean URLs by removing trailing punctuation
+        urls = [self._clean_url(url) for url in urls]
+        
         # Prioritize URLs containing 'submit'
         for url in urls:
             if 'submit' in url.lower():
@@ -85,10 +88,13 @@ class InstructionParser:
         # Check for audio files first
         audio_match = re.search(r'Audio:\s*(https?://[^\s,\)]+)', content, re.IGNORECASE)
         if audio_match:
-            return audio_match.group(1)
+            return self._clean_url(audio_match.group(1))
         
         url_pattern = r'https?://[^\s<>"\'\)]+'
         urls = re.findall(url_pattern, content)
+        
+        # Clean URLs by removing trailing punctuation
+        urls = [self._clean_url(url) for url in urls]
         
         # Filter out submit URLs
         for url in urls:
@@ -96,6 +102,13 @@ class InstructionParser:
                 return url
         
         return None
+    
+    def _clean_url(self, url: str) -> str:
+        """Remove trailing punctuation from URLs"""
+        # Strip common trailing punctuation that shouldn't be part of URLs
+        while url and url[-1] in '.,;:!?)':
+            url = url[:-1]
+        return url
     
     def _identify_task_type(self, content: str) -> str:
         """Identify the type of task"""

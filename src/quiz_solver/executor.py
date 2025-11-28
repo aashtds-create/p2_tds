@@ -4,6 +4,8 @@ Task execution - routes to appropriate handlers
 from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin
+import re
+import logging
 
 from src.quiz_solver.parser import QuizInstructions
 from src.data_processing.scraper import WebScraper
@@ -17,7 +19,6 @@ from src.data_processing.game_solver import GameSolver
 from src.data_processing.visualization_generator import VisualizationGenerator
 from src.data_processing.code_executor import CodeExecutor
 from src.llm.client import LLMClient
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -118,10 +119,71 @@ class TaskExecutor:
         # Resolve relative URLs
         api_url = self._resolve_url(instructions.data_source, base_url)
         
-        # Fetch data from API
-        api_data = await self.api_client.fetch(api_url)
+        # Check if this is a pagination task
+        question_lower = instructions.question.lower()
+        is_pagination = any(kw in question_lower for kw in ['pagination', 'multiple pages', 'all pages', 'traverse', 'page='])
         
-        # Process and answer
+        if is_pagination and '?page=' in api_url:
+            logger.info("Detected pagination task - fetching all pages")
+            # Fetch all pages
+            all_items = []
+            page = 1
+            max_pages = 100  # Safety limit
+            
+            while page <= max_pages:
+                # Update page number in URL
+                current_url = re.sub(r'page=\d+', f'page={page}', api_url)
+                logger.info(f"Fetching page {page}: {current_url}")
+                
+                try:
+                    page_data = await self.api_client.fetch(current_url)
+                    
+                    # Check if data is a list
+                    if isinstance(page_data, list):
+                        if not page_data:  # Empty list means we're done
+                            logger.info(f"Reached end of pagination at page {page}")
+                            break
+                        all_items.extend(page_data)
+                    elif isinstance(page_data, dict) and 'items' in page_data:
+                        items = page_data['items']
+                        if not items:
+                            break
+                        all_items.extend(items)
+                    else:
+                        logger.warning(f"Unexpected data format on page {page}: {type(page_data)}")
+                        break
+                    
+                    page += 1
+                except Exception as e:
+                    logger.error(f"Error fetching page {page}: {e}")
+                    break
+            
+            logger.info(f"Fetched total of {len(all_items)} items across {page-1} pages")
+            
+            # Now find the specific item requested
+            # Look for ID in question
+            import re
+            id_match = re.search(r'ID\s*(\d+)', instructions.question, re.IGNORECASE)
+            if id_match:
+                target_id = int(id_match.group(1))
+                logger.info(f"Looking for item with ID {target_id}")
+                
+                for item in all_items:
+                    if isinstance(item, dict) and item.get('id') == target_id:
+                        # Return the name field
+                        answer = item.get('name', item.get('title', str(item)))
+                        logger.info(f"Found item with ID {target_id}: {answer}")
+                        return answer
+                
+                logger.warning(f"Item with ID {target_id} not found in {len(all_items)} items")
+            
+            # If we can't find it directly, use LLM with all data
+            api_data = all_items
+        else:
+            # Single API fetch (no pagination)
+            api_data = await self.api_client.fetch(api_url)
+        
+        # Process and answer with LLM
         answer = await self.llm_client.solve_task(
             question=instructions.question,
             data=api_data
@@ -137,10 +199,26 @@ class TaskExecutor:
             if not self.current_page_content:
                 raise ValueError("No data source and no current page content available")
             
-            # Use current page content
+            # Enhanced prompt for scraping tasks to help LLM understand what to extract
+            enhanced_question = f"""
+{instructions.question}
+
+Page Content:
+{self.current_page_content}
+
+INSTRUCTIONS:
+- Carefully read the page content above
+- Look for hidden elements, reversed text, or special patterns
+- If text needs to be un-reversed/reversed, do so
+- Extract the exact answer requested
+- Return ONLY the final answer value (no explanations)
+
+Answer:"""
+            
+            # Use current page content with enhanced prompt
             answer = await self.llm_client.solve_task(
-                question=instructions.question,
-                data=self.current_page_content
+                question=enhanced_question,
+                data=None  # Already included in question
             )
             return answer
         
