@@ -55,9 +55,13 @@ class PageRenderer:
             # We try to wait for body to be populated
             await page.wait_for_selector("body", timeout=10000)
             
-            # Extract the full text content, not just #result
-            # The quiz might be anywhere on the page
-            content = await page.evaluate("document.body.innerText")
+            # Extract both text content AND HTML content for hidden elements
+            # Some puzzles have hidden elements that innerText won't capture
+            text_content = await page.evaluate("document.body.innerText")
+            html_content = await page.evaluate("document.body.innerHTML")
+            
+            # Combine both - prioritize text but include HTML for parsing
+            content = f"{text_content}\n\n[RAW HTML FOR HIDDEN ELEMENTS]:\n{html_content}"
             
             # If content is empty or too short, try canvas extraction with Gemini Vision
             if len(content.strip()) < 50:

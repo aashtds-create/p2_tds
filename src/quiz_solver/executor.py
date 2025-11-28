@@ -119,6 +119,19 @@ class TaskExecutor:
         # Resolve relative URLs
         api_url = self._resolve_url(instructions.data_source, base_url)
         
+        # Parse authentication headers from question
+        headers = {}
+        question_text = instructions.question
+        
+        # Look for header requirements like "X-API-Key with value weather-alpha-key"
+        header_pattern = r'header\s+([A-Za-z0-9-]+)\s+with\s+value\s+([A-Za-z0-9-]+)'
+        header_match = re.search(header_pattern, question_text, re.IGNORECASE)
+        if header_match:
+            header_name = header_match.group(1)
+            header_value = header_match.group(2)
+            headers[header_name] = header_value
+            logger.info(f"Found auth header: {header_name}: {header_value}")
+        
         # Check if this is a pagination task
         question_lower = instructions.question.lower()
         is_pagination = any(kw in question_lower for kw in ['pagination', 'multiple pages', 'all pages', 'traverse', 'page='])
@@ -136,7 +149,7 @@ class TaskExecutor:
                 logger.info(f"Fetching page {page}: {current_url}")
                 
                 try:
-                    page_data = await self.api_client.fetch(current_url)
+                    page_data = await self.api_client.fetch(current_url, headers=headers)
                     
                     # Check if data is a list
                     if isinstance(page_data, list):
@@ -180,7 +193,7 @@ class TaskExecutor:
             api_data = all_items
         else:
             # Single API fetch (no pagination)
-            api_data = await self.api_client.fetch(api_url)
+            api_data = await self.api_client.fetch(api_url, headers=headers)
         
         # Process and answer with LLM
         answer = await self.llm_client.solve_task(
