@@ -114,6 +114,26 @@ class InstructionParser:
         if any(keyword in content_lower for keyword in game_keywords):
             return "game"
         
+        # Check for statistical/ML tasks
+        statistical_keywords = [
+            'regression', 'correlation', 'mean', 'median', 'std', 'variance',
+            'machine learning', 'train model', 'predict', 'classification',
+            'clustering', 'linear regression', 'logistic regression',
+            'statistical analysis', 'hypothesis test', 'p-value',
+            'distribution', 'normal distribution', 'probability'
+        ]
+        if any(keyword in content_lower for keyword in statistical_keywords):
+            return "statistical"
+        
+        # Check for geo-spatial tasks
+        geospatial_keywords = [
+            'distance', 'coordinate', 'latitude', 'longitude',
+            'geo', 'map', 'location', 'gps', 'haversine',
+            'miles from', 'km from', 'nearest', 'closest'
+        ]
+        if any(keyword in content_lower for keyword in geospatial_keywords):
+            return "geospatial"
+        
         # Check for media files
         if '[media files found]' in content_lower and 'audio:' in content_lower:
             return "audio"

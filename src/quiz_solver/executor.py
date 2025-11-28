@@ -15,6 +15,7 @@ from src.data_processing.csv_processor import CSVProcessor
 from src.data_processing.computation_solver import ComputationSolver
 from src.data_processing.game_solver import GameSolver
 from src.data_processing.visualization_generator import VisualizationGenerator
+from src.data_processing.code_executor import CodeExecutor
 from src.llm.client import LLMClient
 import logging
 
@@ -39,6 +40,7 @@ class TaskExecutor:
         self.game_solver = GameSolver(self.llm_client)
         self.visualization_generator = VisualizationGenerator()
         self.visualization_generator.llm_client = self.llm_client  # Inject LLM client
+        self.code_executor = CodeExecutor(self.llm_client)  # NEW: Dynamic code execution
         self.current_page_content = None  # Store page content for multi-step tasks
         self.email = None  # Store email for personalized puzzles
         self.previous_answer = None  # Store previous answer for chained puzzles
@@ -73,6 +75,10 @@ class TaskExecutor:
             return await self._handle_analysis_task(instructions, base_url)
         elif instructions.task_type == "game":
             return await self._handle_game_task(instructions, base_url)
+        elif instructions.task_type == "statistical":
+            return await self._handle_statistical_task(instructions, base_url)
+        elif instructions.task_type == "geospatial":
+            return await self._handle_geospatial_task(instructions, base_url)
         else:
             # Use LLM to handle unknown/complex tasks
             return await self._handle_llm_task(instructions)
@@ -291,6 +297,46 @@ class TaskExecutor:
         # Fallback to LLM
         return await self._handle_llm_task(instructions)
     
+    async def _handle_statistical_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
+        """Handle statistical and ML tasks using code generation"""
+        logger.info("Handling statistical/ML task")
+        
+        # Get data if available
+        data = None
+        if instructions.data_source:
+            # Load CSV or other data
+            data_url = self._resolve_url(instructions.data_source, base_url)
+            if data_url.endswith('.csv'):
+                data = await self.csv_processor.load_csv(data_url, base_url)
+        
+        # Use code executor for statistical tasks
+        result = await self.code_executor.solve_statistical_task(
+            task=instructions.question,
+            data=data
+        )
+        
+        if result:
+            return result
+        
+        # Fallback to LLM
+        return await self._handle_llm_task(instructions)
+    
+    async def _handle_geospatial_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
+        """Handle geo-spatial tasks using code generation"""
+        logger.info("Handling geo-spatial task")
+        
+        # Use code executor for geo-spatial calculations
+        result = await self.code_executor.solve_geospatial_task(
+            task=instructions.question,
+            data=self.current_page_content
+        )
+        
+        if result:
+            return result
+        
+        # Fallback to LLM
+        return await self._handle_llm_task(instructions)
+    
     async def _handle_llm_task(self, instructions: QuizInstructions) -> Any:
         """Use LLM to solve complex/unknown tasks"""
         # Check if this is a computational puzzle
@@ -324,6 +370,7 @@ class TaskExecutor:
     async def _solve_with_enhanced_llm(self, instructions: QuizInstructions, full_content: str) -> Any:
         """
         Enhanced LLM solving with better prompting and context
+        Includes code generation fallback for truly novel tasks
         """
         # Build comprehensive context
         context_parts = []
@@ -361,8 +408,27 @@ Answer:"""
         
         logger.info(f"Enhanced LLM prompt length: {len(enhanced_question)} chars")
         
-        return await self.llm_client.solve_task(
+        # Try direct LLM reasoning first
+        llm_result = await self.llm_client.solve_task(
             question=enhanced_question,
             data=None
         )
+        
+        # If LLM returns something, use it
+        if llm_result and str(llm_result).strip():
+            return llm_result
+        
+        # If LLM fails or returns empty, try code generation as fallback
+        logger.warning("Direct LLM approach failed, trying code generation...")
+        code_result = await self.code_executor.solve_with_code(
+            task_description=f"{instructions.question}\n\n{context}",
+            data=full_content
+        )
+        
+        if code_result:
+            logger.info("Code generation successful!")
+            return code_result
+        
+        # If both fail, return the LLM result anyway (might be empty but better than nothing)
+        return llm_result
 
