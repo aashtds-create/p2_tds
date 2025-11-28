@@ -33,15 +33,16 @@ class TaskExecutor:
         self.scraper = WebScraper()
         self.pdf_processor = PDFProcessor()
         self.api_client = APIClient()
-        self.analyzer = DataAnalyzer()
+        self.api_client = APIClient()
+        self.llm_client = LLMClient()
+        self.analyzer = DataAnalyzer(self.llm_client) # Inject LLM client
         self.audio_processor = AudioProcessor()
         self.csv_processor = CSVProcessor()
         self.computation_solver = ComputationSolver()
-        self.llm_client = LLMClient()
         self.game_solver = GameSolver(self.llm_client)
         self.visualization_generator = VisualizationGenerator()
-        self.visualization_generator.llm_client = self.llm_client  # Inject LLM client
-        self.code_executor = CodeExecutor(self.llm_client)  # NEW: Dynamic code execution
+        self.visualization_generator.llm_client = self.llm_client
+        self.current_page_content = None  # Store page content for multi-step tasks
         self.current_page_content = None  # Store page content for multi-step tasks
         self.email = None  # Store email for personalized puzzles
         self.previous_answer = None  # Store previous answer for chained puzzles
@@ -214,8 +215,8 @@ class TaskExecutor:
             
             if len(api_results) > 1:
                 logger.info(f"Detected multi-endpoint pipeline with datasets: {list(api_results.keys())}")
-                pipeline_result = await self.code_executor.solve_with_code(
-                    task_description=instructions.question,
+                pipeline_result = await self.analyzer.analyze(
+                    query=instructions.question,
                     data=api_results
                 )
                 if pipeline_result:
@@ -237,8 +238,8 @@ class TaskExecutor:
         
         if is_data_cleaning or is_complex_calc:
             logger.info("Detected data cleaning or complex calculation task - using code executor")
-            result = await self.code_executor.solve_with_code(
-                task_description=instructions.question,
+            result = await self.analyzer.analyze(
+                query=instructions.question,
                 data=api_data
             )
             if result and not result.lower().startswith(("error", "missing", "unable")):
@@ -392,8 +393,8 @@ Now find the answer:"""
                 if "clean" in instructions.question.lower() and "price" in instructions.question.lower():
                     logger.info("Detected data cleaning task for prices")
                     # Let code executor handle the cleaning logic
-                    result = await self.code_executor.solve_with_code(
-                        task_description=f"{instructions.question}\n\nData: {csv_data.get('head', [])}",
+                    result = await self.analyzer.analyze(
+                        query=f"{instructions.question}\n\nData: {csv_data.get('head', [])}",
                         data=csv_data
                     )
                     if result:
@@ -403,8 +404,8 @@ Now find the answer:"""
                 elif any(keyword in instructions.question.lower() for keyword in ['sum', 'total', 'calculate', 'filter', 'where']):
                     logger.info("Detected CSV filtering/aggregation task")
                     # Use code executor for precise calculations
-                    result = await self.code_executor.solve_with_code(
-                        task_description=f"{instructions.question}\n\nCSV has columns: {csv_data.get('columns', [])}",
+                    result = await self.analyzer.analyze(
+                        query=f"{instructions.question}\n\nCSV has columns: {csv_data.get('columns', [])}",
                         data=csv_data
                     )
                     if result:
@@ -502,8 +503,8 @@ Now find the answer:"""
                 data = await self.csv_processor.load_csv(data_url, base_url)
         
         # Use code executor for statistical tasks
-        result = await self.code_executor.solve_statistical_task(
-            task=instructions.question,
+        result = await self.analyzer.analyze(
+            query=instructions.question,
             data=data
         )
         
@@ -549,8 +550,8 @@ Now find the answer:"""
         if deterministic is not None:
             return deterministic
         
-        result = await self.code_executor.solve_geospatial_task(
-            task=instructions.question,
+        result = await self.analyzer.analyze(
+            query=instructions.question,
             data=geo_data
         )
         
@@ -760,8 +761,8 @@ Answer:"""
         
         # If LLM fails or returns empty, try code generation as fallback
         logger.warning("Direct LLM approach failed, trying code generation...")
-        code_result = await self.code_executor.solve_with_code(
-            task_description=f"{instructions.question}\n\n{context}",
+        code_result = await self.analyzer.analyze(
+            query=f"{instructions.question}\n\n{context}",
             data=full_content
         )
         
