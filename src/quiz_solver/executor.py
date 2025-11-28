@@ -2,7 +2,7 @@
 Task execution - routes to appropriate handlers
 """
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 import re
 import logging
@@ -226,13 +226,22 @@ class TaskExecutor:
         is_data_cleaning = any(kw in question_lower for kw in ['clean', 'messy', 'dirty', 'invalid', 'extract numeric', 'parse'])
         is_complex_calc = any(kw in question_lower for kw in ['sum of', 'calculate', 'highest', 'lowest', 'maximum', 'minimum', 'join', 'orders', 'users'])
         
+        # Try deterministic solvers for known patterns (weather, logs, pipelines, etc.)
+        weather_result = self._solve_weather_task(instructions, api_data)
+        if weather_result is not None:
+            return weather_result
+        
+        pipeline_result = self._solve_multi_dataset_pipeline(api_data, instructions)
+        if pipeline_result is not None:
+            return pipeline_result
+        
         if is_data_cleaning or is_complex_calc:
             logger.info("Detected data cleaning or complex calculation task - using code executor")
             result = await self.code_executor.solve_with_code(
                 task_description=instructions.question,
                 data=api_data
             )
-            if result:
+            if result and not result.lower().startswith(("error", "missing", "unable")):
                 return result
         
         # Process and answer with LLM
@@ -535,6 +544,11 @@ Now find the answer:"""
             logger.warning("Geo data not available, using page content as fallback")
             geo_data = self.current_page_content or instructions.question
         
+        # Try deterministic solver first
+        deterministic = self._solve_geo_distance(geo_data, instructions)
+        if deterministic is not None:
+            return deterministic
+        
         result = await self.code_executor.solve_geospatial_task(
             task=instructions.question,
             data=geo_data
@@ -588,6 +602,110 @@ Now find the answer:"""
         if path_parts:
             return path_parts[-1]
         return parsed.netloc or url
+
+    def _solve_weather_task(self, instructions: QuizInstructions, data: Any) -> Optional[str]:
+        """Deterministically solve weather max temperature task"""
+        question_lower = instructions.question.lower()
+        is_weather_task = 'weather' in question_lower and 'temperature' in question_lower
+        
+        if isinstance(data, dict) and 'weather' in data:
+            dataset = data['weather']
+        else:
+            dataset = data if is_weather_task else None
+        
+        if not (is_weather_task and isinstance(dataset, list)):
+            return None
+        
+        max_entry = None
+        for entry in dataset:
+            temp = entry.get('temp') or entry.get('temperature')
+            if temp is None:
+                continue
+            try:
+                temp_val = float(temp)
+            except (TypeError, ValueError):
+                continue
+            city = entry.get('city') or entry.get('name')
+            if city is None:
+                continue
+            if max_entry is None or temp_val > max_entry[0]:
+                max_entry = (temp_val, city)
+        
+        if max_entry:
+            logger.info(f"Weather task solved deterministically: {max_entry[1]}")
+            return str(max_entry[1])
+        return None
+
+    def _solve_geo_distance(self, data: Any, instructions: QuizInstructions) -> Optional[str]:
+        """Compute Euclidean distance between two labeled points"""
+        if not data:
+            return None
+        
+        ids = re.findall(r"ID ['\"]?([A-Za-z0-9]+)['\"]?", instructions.question)
+        if len(ids) < 2:
+            ids = ['A', 'B']
+        target_a, target_b = ids[0], ids[1]
+        
+        dataset = data.get('locations') if isinstance(data, dict) else data
+        points = {}
+        
+        if isinstance(dataset, list):
+            for entry in dataset:
+                pid = entry.get('id')
+                coords = entry.get('coords') or entry.get('point') or entry.get('coordinates')
+                if coords is None and 'x' in entry and 'y' in entry:
+                    coords = [entry['x'], entry['y']]
+                if pid and isinstance(coords, list) and len(coords) == 2:
+                    points[pid] = coords
+        
+        if target_a in points and target_b in points:
+            ax, ay = points[target_a]
+            bx, by = points[target_b]
+            distance = ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+            result = f"{distance:.2f}"
+            logger.info(f"Geo distance computed deterministically: {result}")
+            return result
+        
+        return None
+
+    def _solve_multi_dataset_pipeline(self, data: Any, instructions: QuizInstructions) -> Optional[str]:
+        """Solve multi-endpoint gold user/order pipeline"""
+        if not isinstance(data, dict):
+            return None
+        
+        required = {'users', 'orders', 'products'}
+        if not required.issubset(set(data.keys())):
+            return None
+        
+        question_lower = instructions.question.lower()
+        if 'gold' not in question_lower or 'orders' not in question_lower:
+            return None
+        
+        users = data.get('users', [])
+        orders = data.get('orders', [])
+        products = data.get('products', [])
+        
+        gold_ids = {u.get('id') for u in users if str(u.get('tier', '')).lower() == 'gold'}
+        if not gold_ids:
+            return "0"
+        
+        price_lookup = {}
+        for product in products:
+            pid = product.get('id') or product.get('sku')
+            price = product.get('price')
+            if pid and price is not None:
+                price_lookup[pid] = float(price)
+        
+        total = 0.0
+        for order in orders:
+            if order.get('user_id') not in gold_ids:
+                continue
+            items = order.get('items') or []
+            for sku in items:
+                total += price_lookup.get(sku, 0.0)
+        
+        logger.info(f"Pipeline task solved deterministically: {total}")
+        return f"{total:.2f}"
 
     async def _solve_with_enhanced_llm(self, instructions: QuizInstructions, full_content: str) -> Any:
         """
