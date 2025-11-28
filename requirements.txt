@@ -21,6 +21,10 @@ pymupdf==1.23.8
 # Image Processing
 Pillow==10.1.0
 
+# Visualization (for chart generation)
+matplotlib==3.8.2
+plotly==5.18.0
+
 # LLM Integration (Gemini via REST API - no SDK needed)
 # Note: We use httpx to call Gemini API directly
 

@@ -81,6 +81,8 @@ class QuizSolver:
         """
         Submit answer to the quiz endpoint
         """
+        import json as json_module
+        
         payload = {
             "email": self.email,
             "secret": self.secret,
@@ -88,8 +90,22 @@ class QuizSolver:
             "answer": answer
         }
         
+        # Check payload size (must be under 1MB per project requirements)
+        payload_json = json_module.dumps(payload)
+        payload_size = len(payload_json.encode('utf-8'))
+        
+        if payload_size > 1_000_000:  # 1MB limit
+            logger.error(f"Payload too large: {payload_size:,} bytes (limit: 1MB)")
+            # Try to truncate if answer is a string
+            if isinstance(answer, str) and len(answer) > 500000:
+                answer = answer[:500000] + "... [truncated]"
+                payload["answer"] = answer
+                payload_size = len(json_module.dumps(payload).encode('utf-8'))
+                logger.info(f"Truncated payload size: {payload_size:,} bytes")
+        
         logger.info(f"Submitting answer to {submit_url}")
-        logger.info(f"Payload: {payload}")
+        logger.info(f"Payload size: {payload_size:,} bytes")
+        logger.info(f"Answer preview: {str(answer)[:200]}...")
         
         async with httpx.AsyncClient() as client:
             try:
@@ -101,20 +117,27 @@ class QuizSolver:
                 
                 # Handle response
                 if result.get("correct"):
-                    logger.info("Answer correct!")
+                    logger.info("✅ Answer correct!")
                     # May have next URL
                     next_url = result.get("url")
                     if next_url:
                         logger.info(f"Proceeding to next URL: {next_url}")
                         await self.solve(next_url)
+                    else:
+                        logger.info("✅ Quiz chain completed successfully!")
                 else:
-                    logger.warning(f"Answer incorrect: {result.get('reason')}")
-                    # Wrong answer - can retry if time permits
-                    if datetime.now() < self.deadline:
-                        # Implement retry logic
-                        # For now, we just log. In a real scenario, we might want to 
-                        # re-evaluate the answer with the feedback (reason).
-                        pass
+                    reason = result.get('reason', 'No reason provided')
+                    logger.warning(f"❌ Answer incorrect: {reason}")
+                    
+                    # Per project rules: "you may receive the next url to proceed to"
+                    # Even if answer is wrong, we can move to next question
+                    next_url = result.get("url")
+                    if next_url:
+                        logger.info(f"Moving to next URL (quiz continues despite wrong answer): {next_url}")
+                        await self.solve(next_url)
+                    else:
+                        logger.warning("No next URL provided after wrong answer")
+                        # Could retry if time permits, but for now we stop
             except Exception as e:
                 logger.error(f"Submission failed: {e}")
 

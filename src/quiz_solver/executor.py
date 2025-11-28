@@ -14,6 +14,7 @@ from src.data_processing.audio_processor import AudioProcessor
 from src.data_processing.csv_processor import CSVProcessor
 from src.data_processing.computation_solver import ComputationSolver
 from src.data_processing.game_solver import GameSolver
+from src.data_processing.visualization_generator import VisualizationGenerator
 from src.llm.client import LLMClient
 import logging
 
@@ -36,6 +37,8 @@ class TaskExecutor:
         self.computation_solver = ComputationSolver()
         self.llm_client = LLMClient()
         self.game_solver = GameSolver(self.llm_client)
+        self.visualization_generator = VisualizationGenerator()
+        self.visualization_generator.llm_client = self.llm_client  # Inject LLM client
         self.current_page_content = None  # Store page content for multi-step tasks
         self.email = None  # Store email for personalized puzzles
         self.previous_answer = None  # Store previous answer for chained puzzles
@@ -249,9 +252,27 @@ class TaskExecutor:
         return await self._handle_llm_task(instructions)
     
     async def _handle_visualization_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
-        """Handle visualization tasks"""
-        # Generate visualization and return as base64
-        # Implementation would create chart and encode
+        """Handle visualization tasks - generate charts, narratives, etc."""
+        logger.info("Handling visualization task")
+        
+        # Get data if specified
+        data = None
+        if instructions.data_source:
+            # Download/load data
+            if instructions.data_source.endswith('.csv'):
+                data = await self.csv_processor.load_csv(instructions.data_source, base_url)
+            # Add other data sources as needed
+        
+        # Generate visualization
+        result = await self.visualization_generator.generate(
+            instructions=instructions.question,
+            data=data
+        )
+        
+        if result:
+            return result
+        
+        # Fallback to LLM
         return await self._handle_llm_task(instructions)
     
     async def _handle_game_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
