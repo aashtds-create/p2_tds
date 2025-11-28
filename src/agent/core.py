@@ -91,6 +91,12 @@ class QuizAgent:
         """
         max_retries = 3
         
+        # Pass current_url to context
+        context_data = {
+            "page_content": page_content,
+            "current_url": self.current_url
+        }
+
         for attempt in range(max_retries):
             # Generate Plan/Code
             code = await self._generate_solution_code(page_content, attempt_error=None)
@@ -100,7 +106,7 @@ class QuizAgent:
                 return None
                 
             # Execute
-            result = self.sandbox.execute(code, context_data={"page_content": page_content})
+            result = self.sandbox.execute(code, context_data=context_data)
             
             output = result.get("output", "").strip()
             error = result.get("error")
@@ -133,10 +139,11 @@ class QuizAgent:
         3. Perform any required actions (download files, calculate, scrape).
         4. PRINT the final answer value on the last line.
         
-        Available libraries: requests, pandas, numpy, matplotlib.pyplot, BeautifulSoup, pypdf, json, re, math.
+        Available libraries: requests, pandas, numpy, matplotlib.pyplot, BeautifulSoup, pypdf, json, re, math, urllib.
         
         CRITICAL:
-        - The variable `page_content` is already available in your scope.
+        - The variable `page_content` is already available in your scope. DO NOT redefine it.
+        - The variable `current_url` is available in your scope. Use it to resolve relative URLs: `url = urllib.parse.urljoin(current_url, relative_path)`.
         - If you need to download a file, finding the URL in `page_content` is your first step.
         - Use `requests` to fetch data.
         - PRINT ONLY THE FINAL ANSWER at the end.
@@ -206,15 +213,17 @@ class QuizAgent:
         logger.info(f"Submitting to {url}...")
         
         try:
-            # Use sandbox requests to ensure environment consistency? 
-            # Or just use sandbox to run the submission code?
             # Let's use sandbox to keep it simple.
+            
+            # Resolve URL if relative
+            from urllib.parse import urljoin
+            full_url = urljoin(self.current_url, url)
             
             code = f"""
 import requests
 import json
 
-url = "{url}"
+url = "{full_url}"
 payload = {json.dumps(payload)}
 
 try:

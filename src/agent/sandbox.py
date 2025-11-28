@@ -20,6 +20,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from bs4 import BeautifulSoup
 import pypdf
+import urllib.parse
+
+def import_urllib():
+    import urllib.parse
+    return urllib
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +65,7 @@ class CodeSandbox:
             "math": math,
             "random": random,
             "datetime": datetime,
+            "urllib": import_urllib(), # Helper to provide urllib
             "print": print, # Ensure print goes to stdout
         }
         
