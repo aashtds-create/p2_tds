@@ -195,6 +195,21 @@ class TaskExecutor:
             # Single API fetch (no pagination)
             api_data = await self.api_client.fetch(api_url, headers=headers)
         
+        # Check if this is a data cleaning or complex data processing task
+        question_lower = instructions.question.lower()
+        is_data_cleaning = any(kw in question_lower for kw in ['clean', 'messy', 'dirty', 'invalid', 'extract numeric', 'parse'])
+        is_complex_calc = any(kw in question_lower for kw in ['sum of', 'calculate', 'highest', 'lowest', 'maximum', 'minimum'])
+        
+        if is_data_cleaning or (is_complex_calc and isinstance(api_data, (list, dict))):
+            logger.info("Detected data cleaning or complex calculation task - using code executor")
+            # Use code executor for precise data processing
+            result = await self.code_executor.solve_with_code(
+                task_description=instructions.question,
+                data=api_data
+            )
+            if result:
+                return result
+        
         # Process and answer with LLM
         answer = await self.llm_client.solve_task(
             question=instructions.question,
@@ -330,8 +345,49 @@ Now find the answer:"""
     
     async def _handle_analysis_task(self, instructions: QuizInstructions, base_url: str = None) -> Any:
         """Handle data analysis tasks"""
+        # Check if this involves CSV processing
+        if instructions.data_source and instructions.data_source.endswith('.csv'):
+            logger.info("Detected CSV analysis task")
+            csv_url = self._resolve_url(instructions.data_source, base_url)
+            
+            try:
+                # Download and process CSV
+                csv_data = await self.csv_processor.process(csv_url)
+                
+                # For data cleaning tasks (remove invalid prices, etc.)
+                if "clean" in instructions.question.lower() and "price" in instructions.question.lower():
+                    logger.info("Detected data cleaning task for prices")
+                    # Let code executor handle the cleaning logic
+                    result = await self.code_executor.solve_with_code(
+                        task_description=f"{instructions.question}\n\nData: {csv_data.get('head', [])}",
+                        data=csv_data
+                    )
+                    if result:
+                        return result
+                
+                # For CSV filtering/aggregation tasks
+                elif any(keyword in instructions.question.lower() for keyword in ['sum', 'total', 'calculate', 'filter', 'where']):
+                    logger.info("Detected CSV filtering/aggregation task")
+                    # Use code executor for precise calculations
+                    result = await self.code_executor.solve_with_code(
+                        task_description=f"{instructions.question}\n\nCSV has columns: {csv_data.get('columns', [])}",
+                        data=csv_data
+                    )
+                    if result:
+                        return result
+                
+                # Fallback to LLM with CSV data
+                answer = await self.llm_client.solve_task(
+                    question=instructions.question,
+                    data=csv_data
+                )
+                return answer
+                
+            except Exception as e:
+                logger.error(f"CSV processing failed: {e}")
+                # Fall through to other handlers
+        
         # Check if this is an alphametic/computational puzzle
-        # Use current_page_content (raw) instead of parsed question
         content_to_check = self.current_page_content if self.current_page_content else instructions.question
         
         # Check for computational puzzle types

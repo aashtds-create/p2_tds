@@ -114,6 +114,15 @@ class InstructionParser:
         """Identify the type of task"""
         content_lower = content.lower()
         
+        # First check for file extensions in URLs (most reliable)
+        csv_pattern = r'\.csv'
+        pdf_pattern = r'\.pdf'
+        
+        if re.search(csv_pattern, content_lower):
+            return "analysis"  # CSV files are analysis tasks
+        elif re.search(pdf_pattern, content_lower):
+            return "pdf"
+        
         # Check for games (HIGH PRIORITY - check early)
         game_keywords = [
             'tic-tac-toe', 'tictactoe', 'noughts', 'crosses',
@@ -152,15 +161,13 @@ class InstructionParser:
             return "audio"
         elif 'audio' in content_lower or 'transcribe' in content_lower or 'listen' in content_lower:
             return "audio"
-        elif 'download' in content_lower or 'pdf' in content_lower:
-            return "pdf"
-        elif 'api' in content_lower or 'endpoint' in content_lower:
+        elif 'api' in content_lower or 'endpoint' in content_lower or 'fetch data' in content_lower:
             return "api"
         elif 'scrape' in content_lower or 'website' in content_lower:
             return "scraping"
         elif 'visualize' in content_lower or 'chart' in content_lower:
             return "visualization"
-        elif 'sum' in content_lower or 'count' in content_lower or 'filter' in content_lower:
+        elif 'sum' in content_lower or 'count' in content_lower or 'filter' in content_lower or 'calculate' in content_lower:
             return "analysis"
         else:
             return "unknown"
