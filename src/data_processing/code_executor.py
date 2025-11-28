@@ -34,12 +34,27 @@ class CodeExecutor:
         sys.stdout = redirected_output
         
         # Prepare context
+        # Prepare DataFrame safely
+        df = data
+        if isinstance(data, (list, dict)):
+            try:
+                df = pd.DataFrame(data)
+            except ValueError:
+                # Handle "If using all scalar values, you must pass an index"
+                if isinstance(data, dict):
+                    try:
+                        df = pd.DataFrame([data])
+                    except Exception:
+                        pass # Keep original data if conversion fails
+            except Exception:
+                pass # Keep original data if conversion fails
+
         context = {
             "pd": pd,
             "np": np,
             "plt": plt,
             "data": data,
-            "df": pd.DataFrame(data) if isinstance(data, (list, dict)) else data
+            "df": df
         }
         
         result_image = None
