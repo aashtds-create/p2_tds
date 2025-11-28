@@ -45,9 +45,14 @@ class DataAnalyzer:
         - Return ONLY the Python code, no markdown formatting.
         """
         
+        # Prepare data sample
+        data_sample = str(data)[:2000]
+        if isinstance(data, pd.DataFrame):
+            data_sample = data.head().to_markdown()
+            
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Query: {query}\nData Sample: {str(data)[:500]}"}
+            {"role": "user", "content": f"Query: {query}\nData Sample:\n{data_sample}"}
         ]
         
         code = await self.llm_client.chat_completion(messages)

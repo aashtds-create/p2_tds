@@ -38,6 +38,9 @@ app = FastAPI(title="LLM Analysis Quiz Solver")
 SECRET = os.getenv("SECRET", "")
 EMAIL = os.getenv("EMAIL", "")
 
+# Store background tasks to prevent GC
+background_tasks = set()
+
 
 class QuizRequest(BaseModel):
     email: str
@@ -78,7 +81,10 @@ async def handle_quiz(request: QuizRequest, http_request: Request):
     logger.info(f"Starting quiz solver with deadline: {deadline}")
     
     # Start async quiz solving (don't await - return immediately)
-    asyncio.create_task(solve_quiz_async(request.url, request.secret, request.email, deadline))
+    # Keep a strong reference to the task to prevent garbage collection
+    task = asyncio.create_task(solve_quiz_async(request.url, request.secret, request.email, deadline))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
     
     return QuizResponse(
         status="accepted",

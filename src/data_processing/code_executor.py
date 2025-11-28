@@ -47,7 +47,10 @@ class CodeExecutor:
         try:
             logger.info("Executing analysis code")
             # Execute code
-            exec(code, context)
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                exec(code, context)
             
             # Check if a plot was created
             if plt.get_fignums():
