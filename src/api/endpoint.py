@@ -15,6 +15,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 import logging
@@ -43,6 +45,15 @@ class QuizRequest(BaseModel):
 class QuizResponse(BaseModel):
     status: str
     message: str
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle malformed JSON with HTTP 400 as per project requirements"""
+    logger.warning(f"Validation error: {exc}")
+    return JSONResponse(
+        status_code=400,
+        content={"detail": "Invalid JSON payload"}
+    )
 
 @app.post("/quiz", response_model=QuizResponse)
 async def handle_quiz(request: QuizRequest):
